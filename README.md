@@ -578,11 +578,16 @@ dotnet add package Pomelo.EntityFrameworkCore.MySql
 dotnet tool install --global dotnet-ef   # falls noch nicht installiert
 
 dotnet ef dbcontext scaffold \
-  "Server=localhost;Port=3306;Database=globalstatsbot;User=botuser;Password=starkespasswort;" \
+  "Server=localhost;Port=3306;Database=discord_identity;User=meinuser;Password=meinpass;TreatTinyAsBoolean=true;" \
   Pomelo.EntityFrameworkCore.MySql \
-  --context AppDbContext \
-  --output-dir Data \
-  --use-database-names
+  --context DiscordIdentityContext \
+  --context-dir Data \
+  --output-dir Models \
+  --namespace MyBotProject.Models \
+  --context-namespace MyBotProject.Data \
+  --use-database-names \
+  --no-onconfiguring \
+  --force
 ```
 
 - Ergebnis:

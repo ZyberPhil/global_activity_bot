@@ -1,118 +1,6 @@
-- C#
-- DSharpPlus + SlashCommands
-- **Database-First** mit **MariaDB**
-
 ---
-
-## 1. Produktidee & Zielbild
-
-**Bot-Idee:**  
-Ein globaler „Identity & Stats“-Bot für Discord, der über alle Server hinweg:
-
-- Aktivitäten von Nutzern sammelt (XP, Nachrichten, Server)
-- **globale Profile** anbietet (`/me`)
-- **globale Badges** verwaltet, die auf jedem Server sichtbar sind
-- später **öffentliche Profilseiten** (Web) bieten kann
-
-**Langfristiges Ziel:**  
-Ein Ökosystem, nicht nur ein Ein-Server-Bot. Basis für:
-
-- Premium-Features (mehr Analytics, Custom-Badges, Branding)
-- Externes Web-Dashboard
-- Monetarisierung (z.B. Pro-Server-Plan oder Pro-User-Profil)
-
+applyTo: '**'
 ---
-
-## 2. Funktionsumfang des MVP
-
-### 2.1. Für normale Nutzer
-
-1. **Globales Profil (`/me`)**
-   - Zeigt:
-     - Discord-Name + Avatar
-     - **Global XP**
-     - Globales Level (z.B. `Level = XP / 100`)
-     - Anzahl Server, auf denen der User aktiv war
-     - bis zu 3 wichtigste Badges (Name + Beschreibung)
-
-2. **XP-Sammeln**
-   - Für Textnachrichten (`MessageCreated`):
-     - Pro Nutzer alle X Sekunden (z.B. 30s) **1 XP**.
-     - Anti-Spam-Cooldown im Speicher (Dictionary).
-   - XP & Nachrichtenzahl werden **pro User + pro Server** gespeichert.
-
-3. **Schöne Darstellung**
-   - Profil-Ausgabe als Embed:
-     - Farbe, Thumbnail = Avatar
-     - klare, kurze Felder (XP, Level, Badges).
-
----
-
-### 2.2. Für Admins / Moderatoren
-
-1. **Badges vergeben (`/badge give`)**
-   - `/badge give @User badge_key`
-   - Nur bei ausreichenden Rechten (z.B. `ManageGuild`).
-   - Badge ist **global**: auf allen Servern im Profil des Users sichtbar.
-
-2. **Badges anzeigen (`/badge list`)**
-   - `/badge list` → zeigt eigene Badges
-   - `/badge list @User` → zeigt Badges eines anderen Users
-
-3. **(optional im MVP) Infos zu diesem Server (`/guild info`)**
-   - Zeigt, ob auf diesem Server XP-Tracking aktiv ist (später für Settings).
-
----
-
-### 2.3. Technische Basis
-
-1. **User-Registrierung**
-   - Beim ersten Kontakt (Message, Command):
-     - Eintrag in `Users`-Tabelle mit `DiscordUserId`, `Username`, `FirstSeen`, `LastSeen`.
-
-2. **Guild-Registrierung**
-   - Wenn der Bot auf einen Server kommt / `GuildAvailable`:
-     - Eintrag in `Guilds` mit `DiscordGuildId`, Name, `JoinedAt`.
-
-3. **Persistenz**
-   - Alle Daten in **MariaDB**, Modell entsteht **Database-First**:
-     - Tabellen direkt in der DB erstellen
-     - dann mit EF Core generieren (`dbcontext scaffold`).
-
----
-
-## 3. Architektur
-
-### 3.1. Komponentenübersicht
-
-1. **Discord-Bot (C# Console / Worker)**
-   - Bibliothek: `DSharpPlus` + `DSharpPlus.SlashCommands`
-   - Verantwortlich für:
-     - Verbindung zu Discord
-     - Events (MessageCreated, GuildAvailable)
-     - SlashCommands (`/me`, `/badge ...`)
-
-2. **Service-Schicht**
-   - Klassen wie `UserService`, `StatsService`, `BadgeService`
-   - Kapseln Zugriffe auf den `AppDbContext`
-   - Enthalten Business-Logik (XP-Cooldown, Badge-Vergabe-Regeln)
-
-3. **Datenzugriff (Database-First)**
-   - `AppDbContext` + Entity-Klassen werden **aus der existierenden MariaDB** generiert.
-   - Kein Code-First/Migrations-Workflow, Änderungen immer zuerst in der DB.
-
-4. **(später) Web-App**
-   - ASP.NET Core für:
-     - öffentliche Profilseiten (`/u/{discordId}`)
-     - Admin-Dashboard für Server-Owner.
-
----
-
-### 3.2. Datenbankschema (Database-First)
-
-Schema in MariaDB per SQL, z.B.:
-
-```sql
 -- ============================================================================
 --  Datenbank anlegen
 -- ============================================================================
@@ -127,10 +15,9 @@ SET NAMES utf8mb4;
 SET time_zone = '+00:00';
 
 -- ============================================================================
---  Tabellen
+--  Tabellen (vorher alte Tabellen droppen, falls vorhanden)
 -- ============================================================================
 
--- 1) Users: globale User-Identität
 DROP TABLE IF EXISTS `UserBadges`;
 DROP TABLE IF EXISTS `UserStats`;
 DROP TABLE IF EXISTS `GuildSubscriptions`;
@@ -138,6 +25,7 @@ DROP TABLE IF EXISTS `Badges`;
 DROP TABLE IF EXISTS `Guilds`;
 DROP TABLE IF EXISTS `Users`;
 
+-- 1) Users: globale User-Identität
 CREATE TABLE `Users` (
     `Id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `DiscordUserId` BIGINT UNSIGNED NOT NULL,
@@ -494,9 +382,207 @@ END$$
 DELIMITER ;
 
 -- ============================================================================
+--  Testdaten einfügen
+-- ============================================================================
+
+USE `discord_identity`;
+
+-- Basisdaten: Users
+INSERT INTO `Users` (
+    `DiscordUserId`, `Username`, `Discriminator`, `AvatarUrl`,
+    `FirstSeen`, `LastSeen`, `IsBot`, `IsBanned`, `GlobalXpCache`
+) VALUES
+(100000000000000001, 'UserAlpha',   '0001', NULL, NOW(6), NOW(6), 0, 0, 1500),
+(100000000000000002, 'UserBeta',    '0002', NULL, NOW(6), NOW(6), 0, 0, 250),
+(100000000000000003, 'UserGamma',   '0003', NULL, NOW(6), NOW(6), 0, 0, 0),
+(100000000000000004, 'StatsBot',    '9999', NULL, NOW(6), NOW(6), 1, 0, 0);
+
+-- Basisdaten: Guilds
+INSERT INTO `Guilds` (
+    `DiscordGuildId`, `Name`, `IconUrl`,
+    `JoinedAt`, `IsXpEnabled`, `SettingsJson`
+) VALUES
+(200000000000000001, 'Guild One',   NULL, NOW(6), 1, JSON_OBJECT('xp_rate', 1, 'cooldown_seconds', 30)),
+(200000000000000002, 'Guild Two',   NULL, NOW(6), 1, JSON_OBJECT('xp_rate', 2, 'cooldown_seconds', 20)),
+(200000000000000003, 'No XP Guild', NULL, NOW(6), 0, JSON_OBJECT('xp_rate', 0, 'cooldown_seconds', 0));
+
+-- Basisdaten: Badges
+INSERT INTO `Badges` (
+    `Key`, `Name`, `Description`, `IconUrl`,
+    `IsSystem`, `IsPremium`, `DisplayOrder`
+) VALUES
+('helper',          'Helper',          'Hilft häufig anderen Nutzern.',                      NULL, 1, 0, 10),
+('top_contributor', 'Top Contributor', 'Sehr aktive Teilnahme an Diskussionen.',             NULL, 1, 0, 20),
+('early_supporter', 'Early Supporter', 'Unterstützt das Projekt in der Frühphase.',         NULL, 1, 1, 30),
+('server_owner',    'Server Owner',    'Betreibt einen Server, auf dem der Bot aktiv ist.', NULL, 0, 1, 40);
+
+-- Beispiel-Stats: UserStats
+SELECT @UserAlphaId := `Id` FROM `Users` WHERE `DiscordUserId` = 100000000000000001;
+SELECT @UserBetaId  := `Id` FROM `Users` WHERE `DiscordUserId` = 100000000000000002;
+
+SELECT @GuildOneId  := `Id` FROM `Guilds` WHERE `DiscordGuildId` = 200000000000000001;
+SELECT @GuildTwoId  := `Id` FROM `Guilds` WHERE `DiscordGuildId` = 200000000000000002;
+
+INSERT INTO `UserStats` (
+    `UserId`, `GuildId`, `Xp`, `Messages`, `LastMessageAt`
+) VALUES
+(@UserAlphaId, @GuildOneId, 1000,  500, NOW(6) - INTERVAL 1 DAY),
+(@UserAlphaId, @GuildTwoId,  500,  200, NOW(6) - INTERVAL 2 DAY),
+(@UserBetaId,  @GuildOneId,  250,  100, NOW(6) - INTERVAL 3 DAY);
+
+-- Beispiel-Badges: UserBadges
+SELECT @HelperId          := `Id` FROM `Badges` WHERE `Key` = 'helper';
+SELECT @TopContributorId  := `Id` FROM `Badges` WHERE `Key` = 'top_contributor';
+SELECT @EarlySupporterId  := `Id` FROM `Badges` WHERE `Key` = 'early_supporter';
+
+INSERT INTO `UserBadges` (
+    `UserId`, `BadgeId`, `GrantedByDiscordUserId`, `GrantedAt`, `Reason`
+) VALUES
+(@UserAlphaId, @HelperId,         100000000000000004, NOW(6) - INTERVAL 5 DAY, 'Hilft aktiv im Support-Channel.'),
+(@UserAlphaId, @TopContributorId, 100000000000000004, NOW(6) - INTERVAL 2 DAY, 'Sehr viele nützliche Beiträge.'),
+(@UserBetaId,  @EarlySupporterId, 100000000000000004, NOW(6) - INTERVAL 10 DAY,'Schon früh den Bot genutzt.');
+
+-- Optionale Testaufrufe der Stored Procedures (kannst du auskommentieren, falls nicht gewünscht)
+
+-- Beispiel: neuen User per SP anlegen
+-- SET @NewUserId = 0;
+-- CALL sp_GetOrCreateUserByDiscordId(100000000000000010, 'NewUser', 0, @NewUserId);
+-- SELECT @NewUserId AS NewUserId;
+
+-- Beispiel: neue Guild per SP anlegen
+-- SET @NewGuildId = 0;
+-- CALL sp_GetOrCreateGuildByDiscordId(200000000000000010, 'Test Guild', @NewGuildId);
+-- SELECT @NewGuildId AS NewGuildId;
+
+-- Beispiel: XP hinzufügen
+-- CALL sp_AddXpForUserInGuild(@UserAlphaId, @GuildOneId, 10, 3);
+
+-- Beispiel: Badge vergeben
+-- CALL sp_GiveBadgeToUser(
+--     100000000000000001,
+--     'UserAlpha',
+--     'server_owner',
+--     100000000000000004,
+--     'Betreibt einen Test-Server.'
+-- );
+
+-- Beispiel: Profil abrufen
+-- CALL sp_GetUserProfile(100000000000000001, 3);
+
+-- ============================================================================
 --  Ende
 -- ============================================================================
-```
+
+
+
+- C#
+- DSharpPlus + SlashCommands
+- **Database-First** mit **MariaDB**
+
+---
+
+## 1. Produktidee & Zielbild
+
+**Bot-Idee:**  
+Ein globaler „Identity & Stats“-Bot für Discord, der über alle Server hinweg:
+
+- Aktivitäten von Nutzern sammelt (XP, Nachrichten, Server)
+- **globale Profile** anbietet (`/me`)
+- **globale Badges** verwaltet, die auf jedem Server sichtbar sind
+- später **öffentliche Profilseiten** (Web) bieten kann
+
+**Langfristiges Ziel:**  
+Ein Ökosystem, nicht nur ein Ein-Server-Bot. Basis für:
+
+- Premium-Features (mehr Analytics, Custom-Badges, Branding)
+- Externes Web-Dashboard
+- Monetarisierung (z.B. Pro-Server-Plan oder Pro-User-Profil)
+
+---
+
+## 2. Funktionsumfang des MVP
+
+### 2.1. Für normale Nutzer
+
+1. **Globales Profil (`/me`)**
+   - Zeigt:
+     - Discord-Name + Avatar
+     - **Global XP**
+     - Globales Level (z.B. `Level = XP / 100`)
+     - Anzahl Server, auf denen der User aktiv war
+     - bis zu 3 wichtigste Badges (Name + Beschreibung)
+
+2. **XP-Sammeln**
+   - Für Textnachrichten (`MessageCreated`):
+     - Pro Nutzer alle X Sekunden (z.B. 30s) **1 XP**.
+     - Anti-Spam-Cooldown im Speicher (Dictionary).
+   - XP & Nachrichtenzahl werden **pro User + pro Server** gespeichert.
+
+3. **Schöne Darstellung**
+   - Profil-Ausgabe als Embed:
+     - Farbe, Thumbnail = Avatar
+     - klare, kurze Felder (XP, Level, Badges).
+
+---
+
+### 2.2. Für Admins / Moderatoren
+
+1. **Badges vergeben (`/badge give`)**
+   - `/badge give @User badge_key`
+   - Nur bei ausreichenden Rechten (z.B. `ManageGuild`).
+   - Badge ist **global**: auf allen Servern im Profil des Users sichtbar.
+
+2. **Badges anzeigen (`/badge list`)**
+   - `/badge list` → zeigt eigene Badges
+   - `/badge list @User` → zeigt Badges eines anderen Users
+
+3. **(optional im MVP) Infos zu diesem Server (`/guild info`)**
+   - Zeigt, ob auf diesem Server XP-Tracking aktiv ist (später für Settings).
+
+---
+
+### 2.3. Technische Basis
+
+1. **User-Registrierung**
+   - Beim ersten Kontakt (Message, Command):
+     - Eintrag in `Users`-Tabelle mit `DiscordUserId`, `Username`, `FirstSeen`, `LastSeen`.
+
+2. **Guild-Registrierung**
+   - Wenn der Bot auf einen Server kommt / `GuildAvailable`:
+     - Eintrag in `Guilds` mit `DiscordGuildId`, Name, `JoinedAt`.
+
+3. **Persistenz**
+   - Alle Daten in **MariaDB**, Modell entsteht **Database-First**:
+     - Tabellen direkt in der DB erstellen
+     - dann mit EF Core generieren (`dbcontext scaffold`).
+
+---
+
+## 3. Architektur
+
+### 3.1. Komponentenübersicht
+
+1. **Discord-Bot (C# Console / Worker)**
+   - Bibliothek: `DSharpPlus` + `DSharpPlus.SlashCommands`
+   - Verantwortlich für:
+     - Verbindung zu Discord
+     - Events (MessageCreated, GuildAvailable)
+     - SlashCommands (`/me`, `/badge ...`)
+
+2. **Service-Schicht**
+   - Klassen wie `UserService`, `StatsService`, `BadgeService`
+   - Kapseln Zugriffe auf den `AppDbContext`
+   - Enthalten Business-Logik (XP-Cooldown, Badge-Vergabe-Regeln)
+
+3. **Datenzugriff (Database-First)**
+   - `AppDbContext` + Entity-Klassen werden **aus der existierenden MariaDB** generiert.
+   - Kein Code-First/Migrations-Workflow, Änderungen immer zuerst in der DB.
+
+4. **(später) Web-App**
+   - ASP.NET Core für:
+     - öffentliche Profilseiten (`/u/{discordId}`)
+     - Admin-Dashboard für Server-Owner.
+
 
 ---
 
@@ -718,3 +804,10 @@ VALUES
 3. **API & Views**
    - `GET /u/{discordId}` → Profilseite mit XP, Level, Badges.
    - Evtl. OAuth2-Login via Discord für User-spezifische Einstellungen.
+
+---
+
+Wenn du möchtest, kann ich dir jetzt als nächsten Schritt ein **konkretes Minimalgerüst** schreiben (mit Datei-Struktur und Beispiel-Code für `Program.cs`, `BotService`, `ProfileCommands`), alles schon passend für:
+
+- DSharpPlus + SlashCommands
+- EF Core Database-First mit MariaDB.

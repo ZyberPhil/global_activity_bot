@@ -113,48 +113,389 @@ Ein Ökosystem, nicht nur ein Ein-Server-Bot. Basis für:
 Schema in MariaDB per SQL, z.B.:
 
 ```sql
-CREATE TABLE Users (
-    Id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    DiscordUserId BIGINT NOT NULL,
-    Username VARCHAR(100) NOT NULL,
-    FirstSeen DATETIME NOT NULL,
-    LastSeen DATETIME NOT NULL
-);
+-- ============================================================================
+--  Datenbank anlegen
+-- ============================================================================
 
-CREATE TABLE Guilds (
-    Id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    DiscordGuildId BIGINT NOT NULL,
-    Name VARCHAR(200) NOT NULL,
-    JoinedAt DATETIME NOT NULL
-);
+CREATE DATABASE IF NOT EXISTS `discord_identity`
+  DEFAULT CHARACTER SET utf8mb4
+  DEFAULT COLLATE utf8mb4_unicode_ci;
 
-CREATE TABLE UserStats (
-    Id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    UserId BIGINT NOT NULL,
-    GuildId BIGINT NOT NULL,
-    Xp INT NOT NULL,
-    Messages INT NOT NULL,
-    LastMessageAt DATETIME NULL,
-    CONSTRAINT FK_UserStats_Users FOREIGN KEY (UserId) REFERENCES Users(Id),
-    CONSTRAINT FK_UserStats_Guilds FOREIGN KEY (GuildId) REFERENCES Guilds(Id)
-);
+USE `discord_identity`;
 
-CREATE TABLE Badges (
-    Id INT AUTO_INCREMENT PRIMARY KEY,
-    `Key` VARCHAR(50) NOT NULL UNIQUE,
-    Name VARCHAR(100) NOT NULL,
-    Description VARCHAR(255) NOT NULL
-);
+SET NAMES utf8mb4;
+SET time_zone = '+00:00';
 
-CREATE TABLE UserBadges (
-    Id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    UserId BIGINT NOT NULL,
-    BadgeId INT NOT NULL,
-    GrantedByDiscordUserId BIGINT NOT NULL,
-    GrantedAt DATETIME NOT NULL,
-    CONSTRAINT FK_UserBadges_Users FOREIGN KEY (UserId) REFERENCES Users(Id),
-    CONSTRAINT FK_UserBadges_Badges FOREIGN KEY (BadgeId) REFERENCES Badges(Id)
-);
+-- ============================================================================
+--  Tabellen
+-- ============================================================================
+
+-- 1) Users: globale User-Identität
+DROP TABLE IF EXISTS `UserBadges`;
+DROP TABLE IF EXISTS `UserStats`;
+DROP TABLE IF EXISTS `GuildSubscriptions`;
+DROP TABLE IF EXISTS `Badges`;
+DROP TABLE IF EXISTS `Guilds`;
+DROP TABLE IF EXISTS `Users`;
+
+CREATE TABLE `Users` (
+    `Id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `DiscordUserId` BIGINT UNSIGNED NOT NULL,
+    `Username` VARCHAR(100) NOT NULL,
+    `Discriminator` VARCHAR(10) NULL,
+    `AvatarUrl` VARCHAR(500) NULL,
+    `FirstSeen` DATETIME(6) NOT NULL,
+    `LastSeen` DATETIME(6) NOT NULL,
+    `IsBot` TINYINT(1) NOT NULL DEFAULT 0,
+    `IsBanned` TINYINT(1) NOT NULL DEFAULT 0,
+    `GlobalXpCache` BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    `CreatedAt` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    `UpdatedAt` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+    PRIMARY KEY (`Id`),
+    UNIQUE KEY `UX_Users_DiscordUserId` (`DiscordUserId`),
+    KEY `IX_Users_FirstSeen` (`FirstSeen`),
+    KEY `IX_Users_LastSeen` (`LastSeen`)
+) ENGINE=InnoDB
+  DEFAULT CHARSET=utf8mb4
+  COLLATE=utf8mb4_unicode_ci;
+
+-- 2) Guilds: Discord-Guilds (Server)
+CREATE TABLE `Guilds` (
+    `Id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `DiscordGuildId` BIGINT UNSIGNED NOT NULL,
+    `Name` VARCHAR(200) NOT NULL,
+    `IconUrl` VARCHAR(500) NULL,
+    `JoinedAt` DATETIME(6) NOT NULL,
+    `LeftAt` DATETIME(6) NULL,
+    `IsXpEnabled` TINYINT(1) NOT NULL DEFAULT 1,
+    `SettingsJson` JSON NULL,
+    `CreatedAt` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    `UpdatedAt` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+    PRIMARY KEY (`Id`),
+    UNIQUE KEY `UX_Guilds_DiscordGuildId` (`DiscordGuildId`),
+    KEY `IX_Guilds_JoinedAt` (`JoinedAt`)
+) ENGINE=InnoDB
+  DEFAULT CHARSET=utf8mb4
+  COLLATE=utf8mb4_unicode_ci;
+
+-- 3) UserStats: Stats pro (User, Guild)
+CREATE TABLE `UserStats` (
+    `Id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `UserId` BIGINT UNSIGNED NOT NULL,
+    `GuildId` BIGINT UNSIGNED NOT NULL,
+    `Xp` BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    `Messages` BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    `LastMessageAt` DATETIME(6) NULL,
+    `CreatedAt` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    `UpdatedAt` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+    PRIMARY KEY (`Id`),
+    UNIQUE KEY `UX_UserStats_User_Guild` (`UserId`, `GuildId`),
+    KEY `IX_UserStats_UserId` (`UserId`),
+    KEY `IX_UserStats_GuildId` (`GuildId`),
+    KEY `IX_UserStats_LastMessageAt` (`LastMessageAt`),
+    CONSTRAINT `FK_UserStats_Users`
+        FOREIGN KEY (`UserId`) REFERENCES `Users` (`Id`)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+    CONSTRAINT `FK_UserStats_Guilds`
+        FOREIGN KEY (`GuildId`) REFERENCES `Guilds` (`Id`)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE
+) ENGINE=InnoDB
+  DEFAULT CHARSET=utf8mb4
+  COLLATE=utf8mb4_unicode_ci;
+
+-- 4) Badges: globale Badge-Typen
+CREATE TABLE `Badges` (
+    `Id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `Key` VARCHAR(50) NOT NULL,
+    `Name` VARCHAR(100) NOT NULL,
+    `Description` VARCHAR(500) NOT NULL,
+    `IconUrl` VARCHAR(500) NULL,
+    `IsSystem` TINYINT(1) NOT NULL DEFAULT 0,
+    `IsPremium` TINYINT(1) NOT NULL DEFAULT 0,
+    `DisplayOrder` INT NOT NULL DEFAULT 0,
+    `CreatedAt` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    `UpdatedAt` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+    PRIMARY KEY (`Id`),
+    UNIQUE KEY `UX_Badges_Key` (`Key`)
+) ENGINE=InnoDB
+  DEFAULT CHARSET=utf8mb4
+  COLLATE=utf8mb4_unicode_ci;
+
+-- 5) UserBadges: Verknüpfung User <-> Badge
+CREATE TABLE `UserBadges` (
+    `Id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `UserId` BIGINT UNSIGNED NOT NULL,
+    `BadgeId` INT UNSIGNED NOT NULL,
+    `GrantedByDiscordUserId` BIGINT UNSIGNED NOT NULL,
+    `GrantedAt` DATETIME(6) NOT NULL,
+    `Reason` VARCHAR(255) NULL,
+    `CreatedAt` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    PRIMARY KEY (`Id`),
+    UNIQUE KEY `UX_UserBadges_User_Badge` (`UserId`, `BadgeId`),
+    KEY `IX_UserBadges_UserId` (`UserId`),
+    KEY `IX_UserBadges_BadgeId` (`BadgeId`),
+    CONSTRAINT `FK_UserBadges_Users`
+        FOREIGN KEY (`UserId`) REFERENCES `Users` (`Id`)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+    CONSTRAINT `FK_UserBadges_Badges`
+        FOREIGN KEY (`BadgeId`) REFERENCES `Badges` (`Id`)
+        ON DELETE RESTRICT
+        ON UPDATE CASCADE
+) ENGINE=InnoDB
+  DEFAULT CHARSET=utf8mb4
+  COLLATE=utf8mb4_unicode_ci;
+
+-- 6) GuildSubscriptions (optional, für Premium-Features)
+CREATE TABLE `GuildSubscriptions` (
+    `Id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `GuildId` BIGINT UNSIGNED NOT NULL,
+    `PlanKey` VARCHAR(50) NOT NULL,
+    `IsActive` TINYINT(1) NOT NULL DEFAULT 1,
+    `ValidFrom` DATETIME(6) NOT NULL,
+    `ValidTo` DATETIME(6) NULL,
+    `CreatedAt` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    `UpdatedAt` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+    PRIMARY KEY (`Id`),
+    KEY `IX_GuildSubscriptions_GuildId` (`GuildId`),
+    KEY `IX_GuildSubscriptions_PlanKey` (`PlanKey`),
+    CONSTRAINT `FK_GuildSubscriptions_Guilds`
+        FOREIGN KEY (`GuildId`) REFERENCES `Guilds` (`Id`)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE
+) ENGINE=InnoDB
+  DEFAULT CHARSET=utf8mb4
+  COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+--  Stored Procedures
+-- ============================================================================
+
+DELIMITER $$
+
+-- 1) User holen oder anlegen
+DROP PROCEDURE IF EXISTS `sp_GetOrCreateUserByDiscordId` $$
+CREATE PROCEDURE `sp_GetOrCreateUserByDiscordId` (
+    IN  p_DiscordUserId BIGINT UNSIGNED,
+    IN  p_Username      VARCHAR(100),
+    IN  p_IsBot         TINYINT(1),
+    OUT p_UserId        BIGINT UNSIGNED
+)
+BEGIN
+    DECLARE v_Id BIGINT UNSIGNED;
+
+    START TRANSACTION;
+
+    SELECT `Id` INTO v_Id
+    FROM `Users`
+    WHERE `DiscordUserId` = p_DiscordUserId
+    FOR UPDATE;
+
+    IF v_Id IS NULL THEN
+        INSERT INTO `Users` (`DiscordUserId`, `Username`, `FirstSeen`, `LastSeen`, `IsBot`)
+        VALUES (p_DiscordUserId, p_Username, NOW(6), NOW(6), p_IsBot);
+
+        SET v_Id = LAST_INSERT_ID();
+    ELSE
+        UPDATE `Users`
+        SET `Username` = p_Username,
+            `LastSeen` = NOW(6)
+        WHERE `Id` = v_Id;
+    END IF;
+
+    COMMIT;
+
+    SET p_UserId = v_Id;
+END$$
+
+-- 2) Guild holen oder anlegen
+DROP PROCEDURE IF EXISTS `sp_GetOrCreateGuildByDiscordId` $$
+CREATE PROCEDURE `sp_GetOrCreateGuildByDiscordId` (
+    IN  p_DiscordGuildId BIGINT UNSIGNED,
+    IN  p_Name           VARCHAR(200),
+    OUT p_GuildId        BIGINT UNSIGNED
+)
+BEGIN
+    DECLARE v_Id BIGINT UNSIGNED;
+
+    START TRANSACTION;
+
+    SELECT `Id` INTO v_Id
+    FROM `Guilds`
+    WHERE `DiscordGuildId` = p_DiscordGuildId
+    FOR UPDATE;
+
+    IF v_Id IS NULL THEN
+        INSERT INTO `Guilds` (`DiscordGuildId`, `Name`, `JoinedAt`)
+        VALUES (p_DiscordGuildId, p_Name, NOW(6));
+
+        SET v_Id = LAST_INSERT_ID();
+    ELSE
+        UPDATE `Guilds`
+        SET `Name` = p_Name,
+            `UpdatedAt` = NOW(6)
+        WHERE `Id` = v_Id;
+    END IF;
+
+    COMMIT;
+
+    SET p_GuildId = v_Id;
+END$$
+
+-- 3) XP & Messages inkrementieren
+DROP PROCEDURE IF EXISTS `sp_AddXpForUserInGuild` $$
+CREATE PROCEDURE `sp_AddXpForUserInGuild` (
+    IN p_UserId   BIGINT UNSIGNED,
+    IN p_GuildId  BIGINT UNSIGNED,
+    IN p_XpDelta  BIGINT UNSIGNED,
+    IN p_MsgDelta BIGINT UNSIGNED
+)
+BEGIN
+    START TRANSACTION;
+
+    INSERT INTO `UserStats` (`UserId`, `GuildId`, `Xp`, `Messages`, `LastMessageAt`)
+    VALUES (p_UserId, p_GuildId, p_XpDelta, p_MsgDelta, NOW(6))
+    ON DUPLICATE KEY UPDATE
+        `Xp` = `Xp` + VALUES(`Xp`),
+        `Messages` = `Messages` + VALUES(`Messages`),
+        `LastMessageAt` = VALUES(`LastMessageAt`),
+        `UpdatedAt` = NOW(6);
+
+    UPDATE `Users`
+    SET `GlobalXpCache` = `GlobalXpCache` + p_XpDelta,
+        `LastSeen` = NOW(6)
+    WHERE `Id` = p_UserId;
+
+    COMMIT;
+END$$
+
+-- 4) Badge vergeben
+DROP PROCEDURE IF EXISTS `sp_GiveBadgeToUser` $$
+CREATE PROCEDURE `sp_GiveBadgeToUser` (
+    IN p_DiscordUserId           BIGINT UNSIGNED,
+    IN p_Username                VARCHAR(100),
+    IN p_BadgeKey                VARCHAR(50),
+    IN p_GrantedByDiscordUserId  BIGINT UNSIGNED,
+    IN p_Reason                  VARCHAR(255)
+)
+BEGIN
+    DECLARE v_UserId  BIGINT UNSIGNED;
+    DECLARE v_BadgeId INT UNSIGNED;
+
+    START TRANSACTION;
+
+    -- User holen oder erstellen
+    SELECT `Id` INTO v_UserId
+    FROM `Users`
+    WHERE `DiscordUserId` = p_DiscordUserId
+    FOR UPDATE;
+
+    IF v_UserId IS NULL THEN
+        INSERT INTO `Users` (`DiscordUserId`, `Username`, `FirstSeen`, `LastSeen`)
+        VALUES (p_DiscordUserId, p_Username, NOW(6), NOW(6));
+
+        SET v_UserId = LAST_INSERT_ID();
+    ELSE
+        UPDATE `Users`
+        SET `Username` = p_Username,
+            `LastSeen` = NOW(6)
+        WHERE `Id` = v_UserId;
+    END IF;
+
+    -- Badge holen
+    SELECT `Id` INTO v_BadgeId
+    FROM `Badges`
+    WHERE `Key` = p_BadgeKey
+    FOR UPDATE;
+
+    IF v_BadgeId IS NULL THEN
+        ROLLBACK;
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Badge with given key does not exist.';
+    ELSE
+        -- Nur ein Eintrag pro (User, Badge)
+        IF NOT EXISTS (
+            SELECT 1
+            FROM `UserBadges`
+            WHERE `UserId` = v_UserId
+              AND `BadgeId` = v_BadgeId
+            FOR UPDATE
+        ) THEN
+            INSERT INTO `UserBadges` (
+                `UserId`, `BadgeId`, `GrantedByDiscordUserId`,
+                `GrantedAt`, `Reason`
+            )
+            VALUES (
+                v_UserId, v_BadgeId,
+                p_GrantedByDiscordUserId,
+                NOW(6), p_Reason
+            );
+        END IF;
+    END IF;
+
+    COMMIT;
+END$$
+
+-- 5) Globales Profil lesen (für /me)
+DROP PROCEDURE IF EXISTS `sp_GetUserProfile` $$
+CREATE PROCEDURE `sp_GetUserProfile` (
+    IN p_DiscordUserId BIGINT UNSIGNED,
+    IN p_TopBadges     INT
+)
+BEGIN
+    DECLARE v_UserId BIGINT UNSIGNED;
+
+    -- User finden
+    SELECT `Id`
+    INTO v_UserId
+    FROM `Users`
+    WHERE `DiscordUserId` = p_DiscordUserId;
+
+    IF v_UserId IS NULL THEN
+        -- Leeres Profil zurückgeben
+        SELECT
+            NULL AS `UserId`,
+            NULL AS `DiscordUserId`,
+            NULL AS `Username`,
+            0    AS `GlobalXp`,
+            0    AS `GuildCount`,
+            0    AS `Level`;
+    ELSE
+        -- Basisprofil + aggregierte XP (on the fly)
+        SELECT
+            u.`Id`            AS `UserId`,
+            u.`DiscordUserId` AS `DiscordUserId`,
+            u.`Username`      AS `Username`,
+            COALESCE(SUM(us.`Xp`), 0) AS `GlobalXp`,
+            COUNT(us.`Id`)            AS `GuildCount`,
+            FLOOR(COALESCE(SUM(us.`Xp`), 0) / 100) AS `Level`
+        FROM `Users` u
+        LEFT JOIN `UserStats` us ON us.`UserId` = u.`Id`
+        WHERE u.`Id` = v_UserId;
+
+        -- Badges (Top N)
+        SELECT
+            b.`Key`,
+            b.`Name`,
+            b.`Description`,
+            b.`IconUrl`,
+            ub.`GrantedAt`,
+            ub.`Reason`
+        FROM `UserBadges` ub
+        JOIN `Badges` b ON b.`Id` = ub.`BadgeId`
+        WHERE ub.`UserId` = v_UserId
+        ORDER BY b.`DisplayOrder` ASC, ub.`GrantedAt` ASC
+        LIMIT p_TopBadges;
+    END IF;
+END$$
+
+DELIMITER ;
+
+-- ============================================================================
+--  Ende
+-- ============================================================================
 ```
 
 ---
@@ -237,11 +578,16 @@ dotnet add package Pomelo.EntityFrameworkCore.MySql
 dotnet tool install --global dotnet-ef   # falls noch nicht installiert
 
 dotnet ef dbcontext scaffold \
-  "Server=localhost;Port=3306;Database=globalstatsbot;User=botuser;Password=starkespasswort;" \
+  "Server=localhost;Port=3306;Database=discord_identity;User=meinuser;Password=meinpass;TreatTinyAsBoolean=true;" \
   Pomelo.EntityFrameworkCore.MySql \
-  --context AppDbContext \
-  --output-dir Data \
-  --use-database-names
+  --context DiscordIdentityContext \
+  --context-dir Data \
+  --output-dir Models \
+  --namespace MyBotProject.Models \
+  --context-namespace MyBotProject.Data \
+  --use-database-names \
+  --no-onconfiguring \
+  --force
 ```
 
 - Ergebnis:

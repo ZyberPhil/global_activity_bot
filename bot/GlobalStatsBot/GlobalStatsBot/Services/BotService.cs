@@ -1,12 +1,13 @@
-﻿using DSharpPlus;
+﻿using System;
+using DSharpPlus;
 using DSharpPlus.SlashCommands;
+using GlobalStatsBot.Commands;
 using GlobalStatsBot.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Threading;
 using System.Threading.Tasks;
-using GlobalStatsBot.Commands;
 
 namespace GlobalStatsBot.Services;
 
@@ -14,15 +15,21 @@ public class BotService : IHostedService
 {
     private readonly ILogger<BotService> _logger;
     private readonly DiscordBotOptions _options;
+    private readonly XpMessageHandler _xpMessageHandler;
+    private readonly IServiceProvider _serviceProvider;
 
     private DiscordClient? _client;
 
     public BotService(
         ILogger<BotService> logger,
-        IOptions<DiscordBotOptions> options)
+        IOptions<DiscordBotOptions> options,
+        XpMessageHandler xpMessageHandler,
+        IServiceProvider serviceProvider)
     {
         _logger = logger;
         _options = options.Value;
+        _xpMessageHandler = xpMessageHandler ?? throw new ArgumentNullException(nameof(xpMessageHandler));
+        _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
     }
 
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -50,10 +57,16 @@ public class BotService : IHostedService
         });
 
         // SlashCommands registrieren
-        var slash = _client.UseSlashCommands();
+        var slash = _client.UseSlashCommands(new SlashCommandsConfiguration
+        {
+            Services = _serviceProvider
+        });
 
         // Global registrieren (für Prod) – dauert ca. 1 Stunde bei globalen Commands
         slash.RegisterCommands<PingCommandModule>();
+        slash.RegisterCommands<ProfileCommands>();
+        slash.RegisterCommands<BadgeCommands>();
+        slash.RegisterCommands<GuildCommands>();
 
         // Für Debugging schneller: nur auf einem Test-Guild registrieren:
         // var testGuildId = 123456789012345678UL;
@@ -67,6 +80,8 @@ public class BotService : IHostedService
             return Task.CompletedTask;
         };
 
+        _client.MessageCreated += _xpMessageHandler.OnMessageCreatedAsync;
+
         await _client.ConnectAsync();
 
         _logger.LogInformation("Discord bot connected.");
@@ -76,6 +91,7 @@ public class BotService : IHostedService
     {
         if (_client is not null)
         {
+            _client.MessageCreated -= _xpMessageHandler.OnMessageCreatedAsync;
             _logger.LogInformation("Stopping Discord bot…");
             await _client.DisconnectAsync();
             _client.Dispose();

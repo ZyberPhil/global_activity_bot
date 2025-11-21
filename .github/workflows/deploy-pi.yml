@@ -31,7 +31,7 @@ jobs:
     - name: 5. Dateien kopieren (Deployment)
       # Kopiere die kompilierten Dateien in den Laufzeit-Ordner
       # **WICHTIG:** '--exclude appsettings.json' verhindert das Überschreiben deiner Bot-Token/DB-Passwörter!
-      run: rsync -av --delete --exclude 'appsettings.json' ./publish_output/ /home/global_stats_bot/
+      run: sudo rsync -av --delete --exclude 'appsettings.json' ./bot/GlobalStatsBot/GlobalStatsBot/publish_output/ /home/global_stats_bot/
 
     - name: 6. Bot Service neu starten
       # Startet den Bot mit den neuen Dateien

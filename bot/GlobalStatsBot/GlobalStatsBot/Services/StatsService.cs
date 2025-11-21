@@ -352,6 +352,27 @@ public class StatsService
         return Task.FromResult(Math.Max(level, 0));
     }
 
+    public async Task<int> SynchronizeGlobalXpCacheAsync(CancellationToken ct = default)
+    {
+        const string sql = @"
+UPDATE Users u
+SET GlobalXpCache = (
+    SELECT COALESCE(SUM(us.Xp), 0)
+    FROM UserStats us
+    WHERE us.UserId = u.Id
+);";
+
+        try
+        {
+            return await _context.Database.ExecuteSqlRawAsync(sql, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Fehler beim Synchronisieren von GlobalXpCache.");
+            throw;
+        }
+    }
+
     private static long ClampToLong(ulong value)
         => value > long.MaxValue ? long.MaxValue : (long)value;
 

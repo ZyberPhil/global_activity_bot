@@ -68,6 +68,7 @@ public class BotService : IHostedService
         slash.RegisterCommands<BadgeCommands>();
         slash.RegisterCommands<GuildCommands>();
         slash.RegisterCommands<TopCommands>();
+        slash.RegisterCommands<AdminCommands>();
 
         // Für Debugging schneller: nur auf einem Test-Guild registrieren:
         // var testGuildId = 123456789012345678UL;

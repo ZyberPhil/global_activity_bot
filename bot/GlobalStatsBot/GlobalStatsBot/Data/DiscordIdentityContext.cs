@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
-using Microsoft.EntityFrameworkCore;
 using GlobalStatsBot.Models;
+using Microsoft.EntityFrameworkCore;
 
 namespace GlobalStatsBot.Data;
 
@@ -13,6 +13,8 @@ public partial class DiscordIdentityContext : DbContext
     }
 
     public virtual DbSet<badge> badges { get; set; }
+
+    public virtual DbSet<channelstat> channelstats { get; set; }
 
     public virtual DbSet<guild> guilds { get; set; }
 
@@ -49,6 +51,44 @@ public partial class DiscordIdentityContext : DbContext
                 .HasMaxLength(6)
                 .ValueGeneratedOnAddOrUpdate()
                 .HasDefaultValueSql("current_timestamp(6)");
+        });
+
+        modelBuilder.Entity<channelstat>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PRIMARY");
+
+            entity.HasIndex(e => e.ChannelId, "IX_ChannelStats_ChannelId");
+
+            entity.HasIndex(e => e.GuildId, "IX_ChannelStats_GuildId");
+
+            entity.HasIndex(e => e.LastMessageAt, "IX_ChannelStats_LastMessageAt");
+
+            entity.HasIndex(e => e.UserId, "IX_ChannelStats_UserId");
+
+            entity.HasIndex(e => new { e.UserId, e.GuildId, e.ChannelId }, "UX_ChannelStats_User_Guild_Channel").IsUnique();
+
+            entity.Property(e => e.Id).HasColumnType("bigint(20) unsigned");
+            entity.Property(e => e.ChannelId).HasColumnType("bigint(20) unsigned");
+            entity.Property(e => e.CreatedAt)
+                .HasMaxLength(6)
+                .HasDefaultValueSql("current_timestamp(6)");
+            entity.Property(e => e.GuildId).HasColumnType("bigint(20) unsigned");
+            entity.Property(e => e.LastMessageAt).HasMaxLength(6);
+            entity.Property(e => e.Messages).HasColumnType("bigint(20) unsigned");
+            entity.Property(e => e.UpdatedAt)
+                .HasMaxLength(6)
+                .ValueGeneratedOnAddOrUpdate()
+                .HasDefaultValueSql("current_timestamp(6)");
+            entity.Property(e => e.UserId).HasColumnType("bigint(20) unsigned");
+            entity.Property(e => e.Xp).HasColumnType("bigint(20) unsigned");
+
+            entity.HasOne(d => d.Guild).WithMany(p => p.channelstats)
+                .HasForeignKey(d => d.GuildId)
+                .HasConstraintName("FK_ChannelStats_Guilds");
+
+            entity.HasOne(d => d.User).WithMany(p => p.channelstats)
+                .HasForeignKey(d => d.UserId)
+                .HasConstraintName("FK_ChannelStats_Users");
         });
 
         modelBuilder.Entity<guild>(entity =>

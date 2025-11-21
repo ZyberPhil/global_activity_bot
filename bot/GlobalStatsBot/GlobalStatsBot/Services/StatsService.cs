@@ -32,6 +32,7 @@ public class StatsService
     public async Task AddXpForMessageAsync(
         DiscordUser discordUser,
         DiscordGuild guild,
+        DiscordChannel? channel,
         long xpDelta = 1,
         long msgDelta = 1,
         CancellationToken ct = default)
@@ -87,6 +88,33 @@ public class StatsService
             }
 
             userEntity.GlobalXpCache += (ulong)xpDelta;
+
+            if (channel is not null && channel.GuildId == guild.Id)
+            {
+                var channelStatsEntity = await _context.channelstats
+                    .FirstOrDefaultAsync(cs => cs.UserId == userEntity.Id && cs.GuildId == guildEntity.Id && cs.ChannelId == channel.Id, ct);
+
+                if (channelStatsEntity is null)
+                {
+                    channelStatsEntity = new channelstat
+                    {
+                        UserId = userEntity.Id,
+                        GuildId = guildEntity.Id,
+                        ChannelId = channel.Id,
+                        Xp = (ulong)xpDelta,
+                        Messages = (ulong)msgDelta,
+                        LastMessageAt = now
+                    };
+
+                    _context.channelstats.Add(channelStatsEntity);
+                }
+                else
+                {
+                    channelStatsEntity.Xp += (ulong)xpDelta;
+                    channelStatsEntity.Messages += (ulong)msgDelta;
+                    channelStatsEntity.LastMessageAt = now;
+                }
+            }
 
             await _context.SaveChangesAsync(ct);
         }

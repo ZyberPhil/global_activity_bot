@@ -54,7 +54,7 @@ public class XpMessageHandler
             if (guildEntity.IsXpEnabled.HasValue && !guildEntity.IsXpEnabled.Value)
                 return;
 
-            await statsService.AddXpForMessageAsync(e.Author, e.Guild);
+            await statsService.AddXpForMessageAsync(e.Author, e.Guild, e.Channel);
         }
         catch (Exception ex)
         {

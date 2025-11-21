@@ -29,6 +29,8 @@ public partial class user
 
     public DateTime UpdatedAt { get; set; }
 
+    public virtual ICollection<channelstat> channelstats { get; set; } = new List<channelstat>();
+
     public virtual ICollection<userbadge> userbadges { get; set; } = new List<userbadge>();
 
     public virtual ICollection<userstat> userstats { get; set; } = new List<userstat>();

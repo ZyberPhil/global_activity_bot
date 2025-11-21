@@ -1,0 +1,42 @@
+name: Deploy Discord Bot to Pi 5 (ARM64)
+
+on:
+  push:
+    # Der Job wird ausgelöst, wenn Code in die 'main' Branch gepusht wird
+    branches: [ "main" ]
+
+jobs:
+  build-and-deploy:
+    # Wichtig: Definiert, dass dieser Job von deinem selbst gehosteten Pi Runner ausgeführt werden muss
+    runs-on: [self-hosted, linux, ARM64]
+    
+    steps:
+    - name: 1. Code auschecken
+      uses: actions/checkout@v4
+
+    - name: 2. .NET 8 Setup
+      uses: actions/setup-dotnet@v4
+      with:
+        # Muss zur Version passen, die du auf dem Pi installiert hast
+        dotnet-version: 8.0.x 
+
+    - name: 3. Abhängigkeiten wiederherstellen (Restore)
+      run: dotnet restore
+
+    - name: 4. Bot Bauen und Publizieren
+      # Erstellt die optimierten Binaries und legt sie im Ordner 'publish_output' ab
+      run: dotnet publish -c Release -o ./publish_output
+
+    - name: 5. Bot Service stoppen
+      # Stoppt den 24/7-Service auf dem Pi, damit die DLLs ersetzt werden können
+      # '|| true' verhindert, dass der Workflow fehlschlägt, falls der Service gerade nicht läuft
+      run: sudo systemctl stop global_stats_bot.service || true
+
+    - name: 6. Dateien kopieren (Deployment)
+      # Kopiere die kompilierten Dateien in den Laufzeit-Ordner
+      # **WICHTIG:** '--exclude appsettings.json' verhindert das Überschreiben deiner Bot-Token/DB-Passwörter!
+      run: rsync -av --delete --exclude 'appsettings.json' ./publish_output/ /home/global_stats_bot/
+
+    - name: 7. Bot Service neu starten
+      # Startet den Bot mit den neuen Dateien
+      run: sudo systemctl start global_stats_bot.service

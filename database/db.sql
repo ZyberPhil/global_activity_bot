@@ -15,16 +15,16 @@ SET time_zone = '+00:00';
 --  Tabellen (vorher alte Tabellen droppen, falls vorhanden)
 -- ============================================================================
 
-DROP TABLE IF EXISTS `ChannelStats`;
-DROP TABLE IF EXISTS `UserBadges`;
-DROP TABLE IF EXISTS `UserStats`;
-DROP TABLE IF EXISTS `GuildSubscriptions`;
-DROP TABLE IF EXISTS `Badges`;
-DROP TABLE IF EXISTS `Guilds`;
-DROP TABLE IF EXISTS `Users`;
+DROP TABLE IF EXISTS `channelstats`;
+DROP TABLE IF EXISTS `userbadges`;
+DROP TABLE IF EXISTS `userstats`;
+DROP TABLE IF EXISTS `guildsubscriptions`;
+DROP TABLE IF EXISTS `badges`;
+DROP TABLE IF EXISTS `guilds`;
+DROP TABLE IF EXISTS `users`;
 
--- 1) Users: globale User-Identität
-CREATE TABLE `Users` (
+-- 1) users: globale User-Identität
+CREATE TABLE `users` (
     `Id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `DiscordUserId` BIGINT UNSIGNED NOT NULL,
     `Username` VARCHAR(100) NOT NULL,
@@ -45,8 +45,8 @@ CREATE TABLE `Users` (
   DEFAULT CHARSET=utf8mb4
   COLLATE=utf8mb4_unicode_ci;
 
--- 2) Guilds: Discord-Guilds (Server)
-CREATE TABLE `Guilds` (
+-- 2) guilds: Discord-Guilds (Server)
+CREATE TABLE `guilds` (
     `Id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `DiscordGuildId` BIGINT UNSIGNED NOT NULL,
     `Name` VARCHAR(200) NOT NULL,
@@ -64,8 +64,8 @@ CREATE TABLE `Guilds` (
   DEFAULT CHARSET=utf8mb4
   COLLATE=utf8mb4_unicode_ci;
 
--- 3) UserStats: Stats pro (User, Guild)
-CREATE TABLE `UserStats` (
+-- 3) userstats: Stats pro (User, Guild)
+CREATE TABLE `userstats` (
     `Id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `UserId` BIGINT UNSIGNED NOT NULL,
     `GuildId` BIGINT UNSIGNED NOT NULL,
@@ -80,48 +80,48 @@ CREATE TABLE `UserStats` (
     KEY `IX_UserStats_GuildId` (`GuildId`),
     KEY `IX_UserStats_LastMessageAt` (`LastMessageAt`),
     CONSTRAINT `FK_UserStats_Users`
-        FOREIGN KEY (`UserId`) REFERENCES `Users` (`Id`)
+        FOREIGN KEY (`UserId`) REFERENCES `users` (`Id`)
         ON DELETE CASCADE
         ON UPDATE CASCADE,
     CONSTRAINT `FK_UserStats_Guilds`
-        FOREIGN KEY (`GuildId`) REFERENCES `Guilds` (`Id`)
+        FOREIGN KEY (`GuildId`) REFERENCES `guilds` (`Id`)
         ON DELETE CASCADE
         ON UPDATE CASCADE
 ) ENGINE=InnoDB
   DEFAULT CHARSET=utf8mb4
   COLLATE=utf8mb4_unicode_ci;
 
--- 3a) ChannelStats: Stats pro (User, Guild, Channel)
-CREATE TABLE `ChannelStats` (
-        `Id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-        `UserId` BIGINT UNSIGNED NOT NULL,
-        `GuildId` BIGINT UNSIGNED NOT NULL,
-        `ChannelId` BIGINT UNSIGNED NOT NULL,
-        `Xp` BIGINT UNSIGNED NOT NULL DEFAULT 0,
-        `Messages` BIGINT UNSIGNED NOT NULL DEFAULT 0,
-        `LastMessageAt` DATETIME(6) NULL,
-        `CreatedAt` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-        `UpdatedAt` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
-        PRIMARY KEY (`Id`),
-        UNIQUE KEY `UX_ChannelStats_User_Guild_Channel` (`UserId`, `GuildId`, `ChannelId`),
-        KEY `IX_ChannelStats_UserId` (`UserId`),
-        KEY `IX_ChannelStats_GuildId` (`GuildId`),
-        KEY `IX_ChannelStats_ChannelId` (`ChannelId`),
-        KEY `IX_ChannelStats_LastMessageAt` (`LastMessageAt`),
-        CONSTRAINT `FK_ChannelStats_Users`
-                FOREIGN KEY (`UserId`) REFERENCES `Users` (`Id`)
-                ON DELETE CASCADE
-                ON UPDATE CASCADE,
-        CONSTRAINT `FK_ChannelStats_Guilds`
-                FOREIGN KEY (`GuildId`) REFERENCES `Guilds` (`Id`)
-                ON DELETE CASCADE
-                ON UPDATE CASCADE
+-- 3a) channelstats: Stats pro (User, Guild, Channel)
+CREATE TABLE `channelstats` (
+    `Id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `UserId` BIGINT UNSIGNED NOT NULL,
+    `GuildId` BIGINT UNSIGNED NOT NULL,
+    `ChannelId` BIGINT UNSIGNED NOT NULL,
+    `Xp` BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    `Messages` BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    `LastMessageAt` DATETIME(6) NULL,
+    `CreatedAt` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    `UpdatedAt` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+    PRIMARY KEY (`Id`),
+    UNIQUE KEY `UX_ChannelStats_User_Guild_Channel` (`UserId`, `GuildId`, `ChannelId`),
+    KEY `IX_ChannelStats_UserId` (`UserId`),
+    KEY `IX_ChannelStats_GuildId` (`GuildId`),
+    KEY `IX_ChannelStats_ChannelId` (`ChannelId`),
+    KEY `IX_ChannelStats_LastMessageAt` (`LastMessageAt`),
+    CONSTRAINT `FK_ChannelStats_Users`
+        FOREIGN KEY (`UserId`) REFERENCES `users` (`Id`)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+    CONSTRAINT `FK_ChannelStats_Guilds`
+        FOREIGN KEY (`GuildId`) REFERENCES `guilds` (`Id`)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE
 ) ENGINE=InnoDB
-    DEFAULT CHARSET=utf8mb4
-    COLLATE=utf8mb4_unicode_ci;
+  DEFAULT CHARSET=utf8mb4
+  COLLATE=utf8mb4_unicode_ci;
 
--- 4) Badges: globale Badge-Typen
-CREATE TABLE `Badges` (
+-- 4) badges: globale Badge-Typen
+CREATE TABLE `badges` (
     `Id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
     `Key` VARCHAR(50) NOT NULL,
     `Name` VARCHAR(100) NOT NULL,
@@ -138,8 +138,8 @@ CREATE TABLE `Badges` (
   DEFAULT CHARSET=utf8mb4
   COLLATE=utf8mb4_unicode_ci;
 
--- 5) UserBadges: Verknüpfung User <-> Badge
-CREATE TABLE `UserBadges` (
+-- 5) userbadges: Verknüpfung User <-> Badge
+CREATE TABLE `userbadges` (
     `Id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `UserId` BIGINT UNSIGNED NOT NULL,
     `BadgeId` INT UNSIGNED NOT NULL,
@@ -152,19 +152,19 @@ CREATE TABLE `UserBadges` (
     KEY `IX_UserBadges_UserId` (`UserId`),
     KEY `IX_UserBadges_BadgeId` (`BadgeId`),
     CONSTRAINT `FK_UserBadges_Users`
-        FOREIGN KEY (`UserId`) REFERENCES `Users` (`Id`)
+        FOREIGN KEY (`UserId`) REFERENCES `users` (`Id`)
         ON DELETE CASCADE
         ON UPDATE CASCADE,
     CONSTRAINT `FK_UserBadges_Badges`
-        FOREIGN KEY (`BadgeId`) REFERENCES `Badges` (`Id`)
+        FOREIGN KEY (`BadgeId`) REFERENCES `badges` (`Id`)
         ON DELETE RESTRICT
         ON UPDATE CASCADE
 ) ENGINE=InnoDB
   DEFAULT CHARSET=utf8mb4
   COLLATE=utf8mb4_unicode_ci;
 
--- 6) GuildSubscriptions (optional, für Premium-Features)
-CREATE TABLE `GuildSubscriptions` (
+-- 6) guildsubscriptions (optional, für Premium-Features)
+CREATE TABLE `guildsubscriptions` (
     `Id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `GuildId` BIGINT UNSIGNED NOT NULL,
     `PlanKey` VARCHAR(50) NOT NULL,
@@ -177,7 +177,7 @@ CREATE TABLE `GuildSubscriptions` (
     KEY `IX_GuildSubscriptions_GuildId` (`GuildId`),
     KEY `IX_GuildSubscriptions_PlanKey` (`PlanKey`),
     CONSTRAINT `FK_GuildSubscriptions_Guilds`
-        FOREIGN KEY (`GuildId`) REFERENCES `Guilds` (`Id`)
+        FOREIGN KEY (`GuildId`) REFERENCES `guilds` (`Id`)
         ON DELETE CASCADE
         ON UPDATE CASCADE
 ) ENGINE=InnoDB
@@ -204,17 +204,17 @@ BEGIN
     START TRANSACTION;
 
     SELECT `Id` INTO v_Id
-    FROM `Users`
+    FROM `users`
     WHERE `DiscordUserId` = p_DiscordUserId
     FOR UPDATE;
 
     IF v_Id IS NULL THEN
-        INSERT INTO `Users` (`DiscordUserId`, `Username`, `FirstSeen`, `LastSeen`, `IsBot`)
+        INSERT INTO `users` (`DiscordUserId`, `Username`, `FirstSeen`, `LastSeen`, `IsBot`)
         VALUES (p_DiscordUserId, p_Username, NOW(6), NOW(6), p_IsBot);
 
         SET v_Id = LAST_INSERT_ID();
     ELSE
-        UPDATE `Users`
+        UPDATE `users`
         SET `Username` = p_Username,
             `LastSeen` = NOW(6)
         WHERE `Id` = v_Id;
@@ -238,17 +238,17 @@ BEGIN
     START TRANSACTION;
 
     SELECT `Id` INTO v_Id
-    FROM `Guilds`
+    FROM `guilds`
     WHERE `DiscordGuildId` = p_DiscordGuildId
     FOR UPDATE;
 
     IF v_Id IS NULL THEN
-        INSERT INTO `Guilds` (`DiscordGuildId`, `Name`, `JoinedAt`)
+        INSERT INTO `guilds` (`DiscordGuildId`, `Name`, `JoinedAt`)
         VALUES (p_DiscordGuildId, p_Name, NOW(6));
 
         SET v_Id = LAST_INSERT_ID();
     ELSE
-        UPDATE `Guilds`
+        UPDATE `guilds`
         SET `Name` = p_Name,
             `UpdatedAt` = NOW(6)
         WHERE `Id` = v_Id;
@@ -270,7 +270,7 @@ CREATE PROCEDURE `sp_AddXpForUserInGuild` (
 BEGIN
     START TRANSACTION;
 
-    INSERT INTO `UserStats` (`UserId`, `GuildId`, `Xp`, `Messages`, `LastMessageAt`)
+    INSERT INTO `userstats` (`UserId`, `GuildId`, `Xp`, `Messages`, `LastMessageAt`)
     VALUES (p_UserId, p_GuildId, p_XpDelta, p_MsgDelta, NOW(6))
     ON DUPLICATE KEY UPDATE
         `Xp` = `Xp` + VALUES(`Xp`),
@@ -278,7 +278,7 @@ BEGIN
         `LastMessageAt` = VALUES(`LastMessageAt`),
         `UpdatedAt` = NOW(6);
 
-    UPDATE `Users`
+    UPDATE `users`
     SET `GlobalXpCache` = `GlobalXpCache` + p_XpDelta,
         `LastSeen` = NOW(6)
     WHERE `Id` = p_UserId;
@@ -301,27 +301,25 @@ BEGIN
 
     START TRANSACTION;
 
-    -- User holen oder erstellen
     SELECT `Id` INTO v_UserId
-    FROM `Users`
+    FROM `users`
     WHERE `DiscordUserId` = p_DiscordUserId
     FOR UPDATE;
 
     IF v_UserId IS NULL THEN
-        INSERT INTO `Users` (`DiscordUserId`, `Username`, `FirstSeen`, `LastSeen`)
+        INSERT INTO `users` (`DiscordUserId`, `Username`, `FirstSeen`, `LastSeen`)
         VALUES (p_DiscordUserId, p_Username, NOW(6), NOW(6));
 
         SET v_UserId = LAST_INSERT_ID();
     ELSE
-        UPDATE `Users`
+        UPDATE `users`
         SET `Username` = p_Username,
             `LastSeen` = NOW(6)
         WHERE `Id` = v_UserId;
     END IF;
 
-    -- Badge holen
     SELECT `Id` INTO v_BadgeId
-    FROM `Badges`
+    FROM `badges`
     WHERE `Key` = p_BadgeKey
     FOR UPDATE;
 
@@ -330,15 +328,14 @@ BEGIN
         SIGNAL SQLSTATE '45000'
             SET MESSAGE_TEXT = 'Badge with given key does not exist.';
     ELSE
-        -- Nur ein Eintrag pro (User, Badge)
         IF NOT EXISTS (
             SELECT 1
-            FROM `UserBadges`
+            FROM `userbadges`
             WHERE `UserId` = v_UserId
               AND `BadgeId` = v_BadgeId
             FOR UPDATE
         ) THEN
-            INSERT INTO `UserBadges` (
+            INSERT INTO `userbadges` (
                 `UserId`, `BadgeId`, `GrantedByDiscordUserId`,
                 `GrantedAt`, `Reason`
             )
@@ -362,14 +359,12 @@ CREATE PROCEDURE `sp_GetUserProfile` (
 BEGIN
     DECLARE v_UserId BIGINT UNSIGNED;
 
-    -- User finden
     SELECT `Id`
     INTO v_UserId
-    FROM `Users`
+    FROM `users`
     WHERE `DiscordUserId` = p_DiscordUserId;
 
     IF v_UserId IS NULL THEN
-        -- Leeres Profil zurückgeben
         SELECT
             NULL AS `UserId`,
             NULL AS `DiscordUserId`,
@@ -378,7 +373,6 @@ BEGIN
             0    AS `GuildCount`,
             0    AS `Level`;
     ELSE
-        -- Basisprofil + aggregierte XP (on the fly)
         SELECT
             u.`Id`            AS `UserId`,
             u.`DiscordUserId` AS `DiscordUserId`,
@@ -386,11 +380,10 @@ BEGIN
             COALESCE(SUM(us.`Xp`), 0) AS `GlobalXp`,
             COUNT(us.`Id`)            AS `GuildCount`,
             FLOOR(COALESCE(SUM(us.`Xp`), 0) / 100) AS `Level`
-        FROM `Users` u
-        LEFT JOIN `UserStats` us ON us.`UserId` = u.`Id`
+        FROM `users` u
+        LEFT JOIN `userstats` us ON us.`UserId` = u.`Id`
         WHERE u.`Id` = v_UserId;
 
-        -- Badges (Top N)
         SELECT
             b.`Key`,
             b.`Name`,
@@ -398,12 +391,25 @@ BEGIN
             b.`IconUrl`,
             ub.`GrantedAt`,
             ub.`Reason`
-        FROM `UserBadges` ub
-        JOIN `Badges` b ON b.`Id` = ub.`BadgeId`
+        FROM `userbadges` ub
+        JOIN `badges` b ON b.`Id` = ub.`BadgeId`
         WHERE ub.`UserId` = v_UserId
         ORDER BY b.`DisplayOrder` ASC, ub.`GrantedAt` ASC
         LIMIT p_TopBadges;
     END IF;
+END$$
+
+-- 6) Global XP Cache synchronisieren
+DROP PROCEDURE IF EXISTS `sp_SyncGlobalXpCache` $$
+CREATE PROCEDURE `sp_SyncGlobalXpCache` ()
+BEGIN
+    UPDATE `users` u
+    LEFT JOIN (
+        SELECT us.`UserId`, COALESCE(SUM(us.`Xp`), 0) AS `TotalXp`
+        FROM `userstats` us
+        GROUP BY us.`UserId`
+    ) agg ON agg.`UserId` = u.`Id`
+    SET u.`GlobalXpCache` = COALESCE(agg.`TotalXp`, 0);
 END$$
 
 DELIMITER ;
@@ -414,8 +420,8 @@ DELIMITER ;
 
 USE `discord_identity`;
 
--- Basisdaten: Users
-INSERT INTO `Users` (
+-- Basisdaten: users
+INSERT INTO `users` (
     `DiscordUserId`, `Username`, `Discriminator`, `AvatarUrl`,
     `FirstSeen`, `LastSeen`, `IsBot`, `IsBanned`, `GlobalXpCache`
 ) VALUES
@@ -424,8 +430,8 @@ INSERT INTO `Users` (
 (100000000000000003, 'UserGamma',   '0003', NULL, NOW(6), NOW(6), 0, 0, 0),
 (100000000000000004, 'StatsBot',    '9999', NULL, NOW(6), NOW(6), 1, 0, 0);
 
--- Basisdaten: Guilds
-INSERT INTO `Guilds` (
+-- Basisdaten: guilds
+INSERT INTO `guilds` (
     `DiscordGuildId`, `Name`, `IconUrl`,
     `JoinedAt`, `IsXpEnabled`, `SettingsJson`
 ) VALUES
@@ -433,8 +439,8 @@ INSERT INTO `Guilds` (
 (200000000000000002, 'Guild Two',   NULL, NOW(6), 1, JSON_OBJECT('xp_rate', 2, 'cooldown_seconds', 20)),
 (200000000000000003, 'No XP Guild', NULL, NOW(6), 0, JSON_OBJECT('xp_rate', 0, 'cooldown_seconds', 0));
 
--- Basisdaten: Badges
-INSERT INTO `Badges` (
+-- Basisdaten: badges
+INSERT INTO `badges` (
     `Key`, `Name`, `Description`, `IconUrl`,
     `IsSystem`, `IsPremium`, `DisplayOrder`
 ) VALUES
@@ -443,48 +449,43 @@ INSERT INTO `Badges` (
 ('early_supporter', 'Early Supporter', 'Unterstützt das Projekt in der Frühphase.',         NULL, 1, 1, 30),
 ('server_owner',    'Server Owner',    'Betreibt einen Server, auf dem der Bot aktiv ist.', NULL, 0, 1, 40);
 
--- Beispiel-Stats: UserStats
-SELECT @UserAlphaId := `Id` FROM `Users` WHERE `DiscordUserId` = 100000000000000001;
-SELECT @UserBetaId  := `Id` FROM `Users` WHERE `DiscordUserId` = 100000000000000002;
+-- Beispiel-Stats: userstats
+SELECT @UserAlphaId := `Id` FROM `users` WHERE `DiscordUserId` = 100000000000000001;
+SELECT @UserBetaId  := `Id` FROM `users` WHERE `DiscordUserId` = 100000000000000002;
 
-SELECT @GuildOneId  := `Id` FROM `Guilds` WHERE `DiscordGuildId` = 200000000000000001;
-SELECT @GuildTwoId  := `Id` FROM `Guilds` WHERE `DiscordGuildId` = 200000000000000002;
+SELECT @GuildOneId  := `Id` FROM `guilds` WHERE `DiscordGuildId` = 200000000000000001;
+SELECT @GuildTwoId  := `Id` FROM `guilds` WHERE `DiscordGuildId` = 200000000000000002;
 
-INSERT INTO `UserStats` (
+INSERT INTO `userstats` (
     `UserId`, `GuildId`, `Xp`, `Messages`, `LastMessageAt`
 ) VALUES
 (@UserAlphaId, @GuildOneId, 1000,  500, NOW(6) - INTERVAL 1 DAY),
 (@UserAlphaId, @GuildTwoId,  500,  200, NOW(6) - INTERVAL 2 DAY),
 (@UserBetaId,  @GuildOneId,  250,  100, NOW(6) - INTERVAL 3 DAY);
 
--- Beispiel-Badges: UserBadges
-SELECT @HelperId          := `Id` FROM `Badges` WHERE `Key` = 'helper';
-SELECT @TopContributorId  := `Id` FROM `Badges` WHERE `Key` = 'top_contributor';
-SELECT @EarlySupporterId  := `Id` FROM `Badges` WHERE `Key` = 'early_supporter';
+-- Beispiel-Badges: userbadges
+SELECT @HelperId          := `Id` FROM `badges` WHERE `Key` = 'helper';
+SELECT @TopContributorId  := `Id` FROM `badges` WHERE `Key` = 'top_contributor';
+SELECT @EarlySupporterId  := `Id` FROM `badges` WHERE `Key` = 'early_supporter';
 
-INSERT INTO `UserBadges` (
+INSERT INTO `userbadges` (
     `UserId`, `BadgeId`, `GrantedByDiscordUserId`, `GrantedAt`, `Reason`
 ) VALUES
 (@UserAlphaId, @HelperId,         100000000000000004, NOW(6) - INTERVAL 5 DAY, 'Hilft aktiv im Support-Channel.'),
 (@UserAlphaId, @TopContributorId, 100000000000000004, NOW(6) - INTERVAL 2 DAY, 'Sehr viele nützliche Beiträge.'),
 (@UserBetaId,  @EarlySupporterId, 100000000000000004, NOW(6) - INTERVAL 10 DAY,'Schon früh den Bot genutzt.');
 
--- Optionale Testaufrufe der Stored Procedures (kannst du auskommentieren, falls nicht gewünscht)
-
--- Beispiel: neuen User per SP anlegen
+-- Optionale Testaufrufe der Stored Procedures
 -- SET @NewUserId = 0;
 -- CALL sp_GetOrCreateUserByDiscordId(100000000000000010, 'NewUser', 0, @NewUserId);
 -- SELECT @NewUserId AS NewUserId;
 
--- Beispiel: neue Guild per SP anlegen
 -- SET @NewGuildId = 0;
 -- CALL sp_GetOrCreateGuildByDiscordId(200000000000000010, 'Test Guild', @NewGuildId);
 -- SELECT @NewGuildId AS NewGuildId;
 
--- Beispiel: XP hinzufügen
 -- CALL sp_AddXpForUserInGuild(@UserAlphaId, @GuildOneId, 10, 3);
 
--- Beispiel: Badge vergeben
 -- CALL sp_GiveBadgeToUser(
 --     100000000000000001,
 --     'UserAlpha',
@@ -493,7 +494,6 @@ INSERT INTO `UserBadges` (
 --     'Betreibt einen Test-Server.'
 -- );
 
--- Beispiel: Profil abrufen
 -- CALL sp_GetUserProfile(100000000000000001, 3);
 
 -- ============================================================================

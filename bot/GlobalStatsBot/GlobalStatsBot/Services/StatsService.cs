@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
+using System.Data.Common;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -14,6 +15,8 @@ namespace GlobalStatsBot.Services;
 
 public class StatsService
 {
+    private const string GlobalXpSyncStoredProcedure = "CALL sp_SyncGlobalXpCache();";
+
     private readonly DiscordIdentityContext _context;
     private readonly UserService _userService;
     private readonly GuildService _guildService;
@@ -354,17 +357,16 @@ public class StatsService
 
     public async Task<int> SynchronizeGlobalXpCacheAsync(CancellationToken ct = default)
     {
-        const string sql = @"
-UPDATE Users u
-SET GlobalXpCache = (
-    SELECT COALESCE(SUM(us.Xp), 0)
-    FROM UserStats us
-    WHERE us.UserId = u.Id
-);";
-
         try
         {
-            return await _context.Database.ExecuteSqlRawAsync(sql, ct);
+            var affected = await _context.Database.ExecuteSqlRawAsync(GlobalXpSyncStoredProcedure, ct);
+            _logger.LogDebug("Global XP Cache per Stored Procedure aktualisiert.");
+            return affected;
+        }
+        catch (Exception ex) when (IsRecoverableSyncException(ex))
+        {
+            _logger.LogWarning(ex, "Stored Procedure {Procedure} fehlgeschlagen. Starte EF-Fallback.", GlobalXpSyncStoredProcedure);
+            return await SynchronizeGlobalXpCacheViaEfAsync(ct);
         }
         catch (Exception ex)
         {
@@ -372,6 +374,67 @@ SET GlobalXpCache = (
             throw;
         }
     }
+
+    private async Task<int> SynchronizeGlobalXpCacheViaEfAsync(CancellationToken ct)
+    {
+        try
+        {
+            var aggregates = await _context.userstats
+                .AsNoTracking()
+                .GroupBy(us => us.UserId)
+                .Select(g => new
+                {
+                    UserId = g.Key,
+                    TotalXp = g.Sum(us => (decimal)us.Xp)
+                })
+                .ToListAsync(ct);
+
+            var xpByUser = aggregates.ToDictionary(
+                a => a.UserId,
+                a => (ulong)Math.Min(a.TotalXp, (decimal)ulong.MaxValue));
+
+            var userIdsWithStats = xpByUser.Keys.ToList();
+
+            if (userIdsWithStats.Count > 0)
+            {
+                var usersToUpdate = await _context.users
+                    .Where(u => userIdsWithStats.Contains(u.Id))
+                    .ToListAsync(ct);
+
+                foreach (var userEntity in usersToUpdate)
+                {
+                    var nextValue = xpByUser[userEntity.Id];
+                    if (userEntity.GlobalXpCache != nextValue)
+                    {
+                        userEntity.GlobalXpCache = nextValue;
+                    }
+                }
+            }
+
+            var zeroTargetUsersQuery = userIdsWithStats.Count == 0
+                ? _context.users.Where(u => u.GlobalXpCache != 0)
+                : _context.users.Where(u => !userIdsWithStats.Contains(u.Id) && u.GlobalXpCache != 0);
+
+            var zeroTargets = await zeroTargetUsersQuery.ToListAsync(ct);
+
+            foreach (var userEntity in zeroTargets)
+            {
+                userEntity.GlobalXpCache = 0;
+            }
+
+            var affected = await _context.SaveChangesAsync(ct);
+            _logger.LogInformation("Global XP Cache via EF-Fallback synchronisiert: {Affected} Einträge aktualisiert.", affected);
+            return affected;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Fehler beim EF-Fallback für GlobalXpCache.");
+            throw;
+        }
+    }
+
+    private static bool IsRecoverableSyncException(Exception ex)
+        => ex is DbException || ex is InvalidOperationException;
 
     private static long ClampToLong(ulong value)
         => value > long.MaxValue ? long.MaxValue : (long)value;

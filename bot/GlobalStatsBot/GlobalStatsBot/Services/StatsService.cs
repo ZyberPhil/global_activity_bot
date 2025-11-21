@@ -1,9 +1,11 @@
 using DSharpPlus.Entities;
 using GlobalStatsBot.Data;
+using GlobalStatsBot.Dtos;
 using GlobalStatsBot.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -32,6 +34,7 @@ public class StatsService
     public async Task AddXpForMessageAsync(
         DiscordUser discordUser,
         DiscordGuild guild,
+        DiscordChannel? channel,
         long xpDelta = 1,
         long msgDelta = 1,
         CancellationToken ct = default)
@@ -87,6 +90,33 @@ public class StatsService
             }
 
             userEntity.GlobalXpCache += (ulong)xpDelta;
+
+            if (channel is not null && channel.GuildId == guild.Id)
+            {
+                var channelStatsEntity = await _context.channelstats
+                    .FirstOrDefaultAsync(cs => cs.UserId == userEntity.Id && cs.GuildId == guildEntity.Id && cs.ChannelId == channel.Id, ct);
+
+                if (channelStatsEntity is null)
+                {
+                    channelStatsEntity = new channelstat
+                    {
+                        UserId = userEntity.Id,
+                        GuildId = guildEntity.Id,
+                        ChannelId = channel.Id,
+                        Xp = (ulong)xpDelta,
+                        Messages = (ulong)msgDelta,
+                        LastMessageAt = now
+                    };
+
+                    _context.channelstats.Add(channelStatsEntity);
+                }
+                else
+                {
+                    channelStatsEntity.Xp += (ulong)xpDelta;
+                    channelStatsEntity.Messages += (ulong)msgDelta;
+                    channelStatsEntity.LastMessageAt = now;
+                }
+            }
 
             await _context.SaveChangesAsync(ct);
         }
@@ -153,15 +183,202 @@ public class StatsService
         }
     }
 
+    public async Task<IReadOnlyList<LeaderboardEntryDto>> GetTopGlobalUsersAsync(int size = 10, CancellationToken ct = default)
+    {
+        var take = NormalizeLeaderboardSize(size);
+
+        try
+        {
+            var snapshot = await _context.users
+                .AsNoTracking()
+                .Where(u => !u.IsBot && !u.IsBanned && u.GlobalXpCache > 0)
+                .OrderByDescending(u => u.GlobalXpCache)
+                .ThenBy(u => u.Id)
+                .Select(u => new
+                {
+                    u.DiscordUserId,
+                    u.Username,
+                    u.GlobalXpCache,
+                    Messages = _context.userstats
+                        .Where(us => us.UserId == u.Id)
+                        .Sum(us => (decimal?)us.Messages) ?? 0m
+                })
+                .Take(take)
+                .ToListAsync(ct);
+
+            return snapshot
+                .Select(entry => new LeaderboardEntryDto
+                {
+                    DiscordUserId = entry.DiscordUserId,
+                    Username = entry.Username,
+                    Xp = ClampToLong(entry.GlobalXpCache),
+                    Messages = ClampDecimalToLong(entry.Messages)
+                })
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Fehler beim Laden des globalen Leaderboards.");
+            throw;
+        }
+    }
+
+    public async Task<IReadOnlyList<LeaderboardEntryDto>> GetTopUsersByGuildAsync(ulong discordGuildId, int size = 10, CancellationToken ct = default)
+    {
+        if (discordGuildId == 0)
+            throw new ArgumentOutOfRangeException(nameof(discordGuildId));
+
+        var take = NormalizeLeaderboardSize(size);
+
+        try
+        {
+            var guildId = await _context.guilds
+                .AsNoTracking()
+                .Where(g => g.DiscordGuildId == discordGuildId)
+                .Select(g => g.Id)
+                .FirstOrDefaultAsync(ct);
+
+            if (guildId == 0)
+                return Array.Empty<LeaderboardEntryDto>();
+
+            var snapshot = await _context.userstats
+                .AsNoTracking()
+                .Where(us => us.GuildId == guildId && us.Xp > 0)
+                .OrderByDescending(us => us.Xp)
+                .ThenBy(us => us.Id)
+                .Join(
+                    _context.users.AsNoTracking(),
+                    us => us.UserId,
+                    u => u.Id,
+                    (us, u) => new
+                    {
+                        u.DiscordUserId,
+                        u.Username,
+                        us.Xp,
+                        us.Messages
+                    })
+                .Take(take)
+                .ToListAsync(ct);
+
+            return snapshot
+                .Select(entry => new LeaderboardEntryDto
+                {
+                    DiscordUserId = entry.DiscordUserId,
+                    Username = entry.Username,
+                    Xp = ClampToLong(entry.Xp),
+                    Messages = ClampToLong(entry.Messages),
+                    DiscordGuildId = discordGuildId
+                })
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Fehler beim Laden des Guild-Leaderboards für {GuildId}.", discordGuildId);
+            throw;
+        }
+    }
+
+    public async Task<IReadOnlyList<LeaderboardEntryDto>> GetTopUsersByChannelAsync(
+        ulong discordGuildId,
+        ulong channelId,
+        int size = 10,
+        CancellationToken ct = default)
+    {
+        if (discordGuildId == 0)
+            throw new ArgumentOutOfRangeException(nameof(discordGuildId));
+        if (channelId == 0)
+            throw new ArgumentOutOfRangeException(nameof(channelId));
+
+        var take = NormalizeLeaderboardSize(size);
+
+        try
+        {
+            var guildId = await _context.guilds
+                .AsNoTracking()
+                .Where(g => g.DiscordGuildId == discordGuildId)
+                .Select(g => g.Id)
+                .FirstOrDefaultAsync(ct);
+
+            if (guildId == 0)
+                return Array.Empty<LeaderboardEntryDto>();
+
+            var snapshot = await _context.channelstats
+                .AsNoTracking()
+                .Where(cs => cs.GuildId == guildId && cs.ChannelId == channelId && cs.Xp > 0)
+                .OrderByDescending(cs => cs.Xp)
+                .ThenBy(cs => cs.Id)
+                .Join(
+                    _context.users.AsNoTracking(),
+                    cs => cs.UserId,
+                    u => u.Id,
+                    (cs, u) => new
+                    {
+                        u.DiscordUserId,
+                        u.Username,
+                        cs.Xp,
+                        cs.Messages
+                    })
+                .Take(take)
+                .ToListAsync(ct);
+
+            return snapshot
+                .Select(entry => new LeaderboardEntryDto
+                {
+                    DiscordUserId = entry.DiscordUserId,
+                    Username = entry.Username,
+                    Xp = ClampToLong(entry.Xp),
+                    Messages = ClampToLong(entry.Messages),
+                    DiscordGuildId = discordGuildId,
+                    ChannelId = channelId
+                })
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Fehler beim Laden des Channel-Leaderboards für {GuildId}/{ChannelId}.", discordGuildId, channelId);
+            throw;
+        }
+    }
+
     public Task<int> GetLevelFromXpAsync(long globalXp)
     {
-        if (globalXp < 0)
-            globalXp = 0;
+        if (globalXp <= 0)
+        {
+            return Task.FromResult(0);
+        }
 
-        var level = (int)(globalXp / 100);
-        return Task.FromResult(level);
+        // Level requirement: XP_needed = 10 * level^2
+        var level = (int)Math.Floor(Math.Sqrt(globalXp / 10d));
+        return Task.FromResult(Math.Max(level, 0));
+    }
+
+    public async Task<int> SynchronizeGlobalXpCacheAsync(CancellationToken ct = default)
+    {
+        const string sql = @"
+UPDATE Users u
+SET GlobalXpCache = (
+    SELECT COALESCE(SUM(us.Xp), 0)
+    FROM UserStats us
+    WHERE us.UserId = u.Id
+);";
+
+        try
+        {
+            return await _context.Database.ExecuteSqlRawAsync(sql, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Fehler beim Synchronisieren von GlobalXpCache.");
+            throw;
+        }
     }
 
     private static long ClampToLong(ulong value)
         => value > long.MaxValue ? long.MaxValue : (long)value;
+
+    private static long ClampDecimalToLong(decimal value)
+        => (long)Math.Min(value, long.MaxValue);
+
+    private static int NormalizeLeaderboardSize(int size)
+        => Math.Clamp(size, 1, 25);
 }

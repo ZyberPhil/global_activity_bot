@@ -1,313 +1,235 @@
-Hier sind konkrete Tickets (Issues) für die Implementierung der Methoden nach dem EF-Core-Scaffold. Sie sind so formuliert, dass du sie 1:1 in GitHub anlegen kannst.
+## Ticket 1: Dockerfile für .NET 8 Discord-Bot erstellen
 
----
-
-### Ticket 1: `UserService` erstellen – User holen/anlegen & Basis-Updates
-
-**Titel:** `UserService` implementieren (GetOrCreate, LastSeen, Avatar etc.)
+**Titel:** Dockerfile für .NET 8 Discord-Bot erstellen (Release-Build & Slim-Image)
 
 **Beschreibung:**
 
-Erstelle einen `UserService`, der alle Operationen rund um die `Users`-Tabelle kapselt.
+Erstelle ein `Dockerfile`, das den Discord-Bot (GlobalStatsBot) als .NET 8 Console-App baut und als schlankes Runtime-Image bereitstellt. Das Image soll auf ARM64 laufen (Pi 5).
+
+**Akzeptanzkriterien:**
+
+- Dockerfile baut den Bot im `Release`-Modus.
+- Ergebnis-Image basiert auf `mcr.microsoft.com/dotnet/runtime:8.0` oder `aspnet` (falls später Web dabei).
+- Image läuft auf ARM64 (Pi 5, PiOS Lite 64-bit).
+- Bot startet über `dotnet /app/GlobalStatsBot.dll` o.ä.
+- Bot-Token und DB-Connectionstring werden per Environment-Variablen konfiguriert.
 
 **Aufgaben:**
 
-1. **Klasse anlegen**
-   - Namespace z.B. `GlobalStatsBot.Services`.
-   - Konstruktor: nimmt `DiscordIdentityContext` (bzw. deinen `AppDbContext`) und `ILogger<UserService>` via DI.
-   - Lebenszeit: `Scoped` im DI-Container registrieren.
-
-2. **Methode: `Task<Users> GetOrCreateUserAsync(ulong discordUserId, string username, bool isBot, string? discriminator, string? avatarUrl, CancellationToken ct = default)`**
-   - Zweck:
-     - User anhand von `DiscordUserId` laden.
-     - Wenn nicht vorhanden:
-       - neuen `Users`-Eintrag erstellen mit:
-         - `DiscordUserId`, `Username`, `Discriminator`, `AvatarUrl`
-         - `FirstSeen = UtcNow`, `LastSeen = UtcNow`
-         - `IsBot = isBot`
-       - speichern.
-     - Wenn vorhanden:
-       - `Username`, `Discriminator`, `AvatarUrl` aktualisieren (falls geändert).
-       - `LastSeen = UtcNow`.
-       - speichern.
-   - Rückgabewert: das `Users`-Entity.
-
-3. **Methode: `Task<Users?> GetUserByDiscordIdAsync(ulong discordUserId, CancellationToken ct = default)`**
-   - Zweck:
-     - Nur lesen, kein Anlegen.
-     - `Users`-Eintrag anhand von `DiscordUserId` laden oder `null` zurückgeben.
-   - Verwendung:
-     - Für reine Abfragen (z.B. in `/badge list`).
-
-4. **Methode: `Task UpdateLastSeenAsync(ulong discordUserId, CancellationToken ct = default)`**
-   - Zweck:
-     - `LastSeen` für existierenden User auf `UtcNow` setzen.
-   - Verhalten:
-     - Wenn User nicht existiert → nichts tun oder ins Log schreiben (keine Exception).
-
-5. **Methode: `Task<bool> SetUserBannedAsync(ulong discordUserId, bool isBanned, CancellationToken ct = default)`**
-   - Zweck:
-     - `IsBanned`-Flag setzen, um User ggf. komplett auszuschließen.
-   - Rückgabewert:
-     - `true`, wenn User gefunden und aktualisiert wurde.
-     - `false`, wenn kein User mit dieser Discord-ID existiert.
-
-6. **Logging & Fehlerbehandlung**
-   - Bei Datenbankfehlern Exceptions loggen.
-   - Keine `async void`, immer `async Task`.
+1. Im Projektroot ein `Dockerfile` erstellen.
+2. Multi-Stage-Build:
+   - Stage `build`:
+     - Base: `mcr.microsoft.com/dotnet/sdk:8.0`
+     - Projektdateien kopieren.
+     - `dotnet restore`
+     - `dotnet publish -c Release -o /app`
+   - Stage `runtime`:
+     - Base: `mcr.microsoft.com/dotnet/runtime:8.0`
+     - Verzeichnis `/app` erstellen.
+     - Publish-Output aus `build`-Stage nach `/app` kopieren.
+     - `ENTRYPOINT ["dotnet", "GlobalStatsBot.dll"]` (ggf. Name anpassen).
+3. Konfiguration:
+   - Bot liest Token & Connectionstring aus Env-Variablen (z.B. `DISCORD_TOKEN`, `ConnectionStrings__DefaultConnection`).
+   - Sicherstellen, dass `appsettings.json` optional ist und durch Environment überschrieben werden kann.
+4. Test:
+   - Lokal auf x64 bauen & starten: `docker build -t globalstatsbot .` und `docker run --rm -e DISCORD_TOKEN=... globalstatsbot`.
 
 ---
 
-### Ticket 2: `GuildService` erstellen – Guilds registrieren & Settings lesen
+## Ticket 2: Docker-Compose-Datei für Bot + MariaDB erstellen
 
-**Titel:** `GuildService` implementieren (GetOrCreateGuild, IsXpEnabled etc.)
+**Titel:** `docker-compose.yml` für Bot + MariaDB erstellen
 
 **Beschreibung:**
 
-Erstelle einen `GuildService`, der Operationen rund um die `Guilds`-Tabelle kapselt.
+Erstelle eine `docker-compose.yml`, um den Discord-Bot und eine MariaDB-Instanz gemeinsam zu starten. Später auf dem Raspberry Pi einsetzbar.
+
+**Akzeptanzkriterien:**
+
+- Service `db` (MariaDB) mit:
+  - Volumes für persistente Daten.
+  - Initialer DB-User/Pass und DB-Name.
+- Service `bot`:
+  - Abhängig von `db`.
+  - Liest Token & Connectionstring aus Environment-Variablen.
+  - Kann via `docker compose up -d` gestartet werden.
+- Netzwerk: Standard-Bridge reicht; Bot muss `db` über Hostnamen `db` erreichen.
 
 **Aufgaben:**
 
-1. **Klasse anlegen**
-   - Namespace z.B. `GlobalStatsBot.Services`.
-   - Konstruktor mit `DiscordIdentityContext` und `ILogger<GuildService>`.
-   - In DI als `Scoped` registrieren.
-
-2. **Methode: `Task<Guilds> GetOrCreateGuildAsync(ulong discordGuildId, string name, string? iconUrl, CancellationToken ct = default)`**
-   - Zweck:
-     - Guild anhand von `DiscordGuildId` laden.
-     - Wenn nicht vorhanden:
-       - neuen `Guilds`-Eintrag erstellen mit:
-         - `DiscordGuildId`, `Name`, `IconUrl`
-         - `JoinedAt = UtcNow`
-         - `IsXpEnabled = true` (Default).
-       - speichern.
-     - Wenn vorhanden:
-       - `Name` und `IconUrl` aktualisieren (falls geändert).
-       - `UpdatedAt` wird durch DB-Trigger/Definition gesetzt.
-   - Rückgabewert: `Guilds`-Entity.
-
-3. **Methode: `Task<Guilds?> GetGuildByDiscordIdAsync(ulong discordGuildId, CancellationToken ct = default)`**
-   - Zweck:
-     - Nur lesen, kein Anlegen.
-
-4. **Methode: `Task<bool> SetXpEnabledAsync(ulong discordGuildId, bool isEnabled, CancellationToken ct = default)`**
-   - Zweck:
-     - Flag `IsXpEnabled` setzen, z.B. gesteuert durch `/guild xp enable/disable`.
-   - Rückgabewert:
-     - `true` bei Erfolg, `false`, wenn keine Guild mit dieser ID existiert.
-
-5. **Methode (optional für später): `Task<string?> GetSettingsJsonAsync(ulong discordGuildId, CancellationToken ct = default)`**
-   - Zweck:
-     - `SettingsJson`-Spalte auslesen (z.B. für spätere Channel-Filter).
-   - Kein Schreiben in diesem Ticket.
+1. Datei `docker-compose.yml` anlegen.
+2. Service `db` definieren:
+   - Image: `mariadb:10.11` (oder passende Version).
+   - Environment:
+     - `MYSQL_ROOT_PASSWORD`
+     - `MYSQL_DATABASE=discord_identity`
+     - `MYSQL_USER=botuser`
+     - `MYSQL_PASSWORD=starkespasswort`
+   - Volumes:
+     - `./data/mariadb:/var/lib/mysql`
+   - Ports (optional, für lokale DB-Tools): `3306:3306`.
+3. Service `bot` definieren:
+   - Build: `.` (verwendet dein `Dockerfile`).
+   - Environment:
+     - `DISCORD_TOKEN=...`
+     - `ConnectionStrings__DefaultConnection=Server=db;Port=3306;Database=discord_identity;User=botuser;Password=starkespasswort;SslMode=Preferred;TreatTinyAsBoolean=true;`
+   - `depends_on: [db]`.
+   - `restart: unless-stopped`.
+4. Test mit `docker compose up --build` auf deinem Entwicklungsrechner.
+5. Dokumentieren, wie das gleiche Setup auf dem Pi verwendet wird (siehe nächstes Ticket).
 
 ---
 
-### Ticket 3: `StatsService` erstellen – XP & Nachrichtenverarbeitung
+## Ticket 3: Projekt für Docker-Betrieb vorbereiten (Config über Env-Vars)
 
-**Titel:** `StatsService` implementieren (XP für Nachrichten, globale XP-Cache)
+**Titel:** Konfiguration für Docker-Betrieb anpassen (Environment-Variablen)
 
 **Beschreibung:**
 
-Erstelle einen `StatsService`, der die XP-/Nachrichten-Logik über `UserStats` und `Users.GlobalXpCache` kapselt. Er wird vom Message-Handler verwendet.
+Passe das Projekt so an, dass es sich in Docker gut konfigurieren lässt. Keine Secrets in Dateien, stattdessen Environment-Variablen und/oder `appsettings.Docker.json`.
+
+**Akzeptanzkriterien:**
+
+- Bot-Token wird nicht in `appsettings.json` gespeichert.
+- Bot-Token & Connectionstring können über Environment-Variablen gesetzt werden.
+- Logging ist konsolenfreundlich (stdout), sodass `docker logs` alles anzeigt.
 
 **Aufgaben:**
 
-1. **Klasse anlegen**
-   - Namespace: `GlobalStatsBot.Services`.
-   - Konstruktor-Parameter:
-     - `DiscordIdentityContext`
-     - `UserService`
-     - `GuildService`
-     - `ILogger<StatsService>`.
-
-2. **Methode: `Task AddXpForMessageAsync(DiscordUser discordUser, DiscordGuild guild, long xpDelta = 1, long msgDelta = 1, CancellationToken ct = default)`**
-   - Zweck:
-     - Wird vom `MessageCreated`-Event aufgerufen (nach Cooldown-Check).
-   - Schritte:
-     1. Über `UserService.GetOrCreateUserAsync(...)` User holen/anlegen.
-     2. Über `GuildService.GetOrCreateGuildAsync(...)` Guild holen/anlegen.
-     3. Passenden `UserStats`-Datensatz für `(UserId, GuildId)` laden.
-        - Wenn nicht vorhanden:
-          - neuen Datensatz mit `Xp = xpDelta`, `Messages = msgDelta`, `LastMessageAt = UtcNow` anlegen.
-        - Wenn vorhanden:
-          - `Xp += xpDelta`, `Messages += msgDelta`, `LastMessageAt = UtcNow` aktualisieren.
-     4. `Users.GlobalXpCache += xpDelta` hochzählen (am User-Entity).
-     5. `SaveChangesAsync(ct)`.
-
-3. **Methode: `Task<long> GetGlobalXpAsync(ulong discordUserId, CancellationToken ct = default)`**
-   - Zweck:
-     - Global XP eines Users ermitteln.
-   - Implementierung:
-     - Variante A (einfach): `Users.GlobalXpCache` zurückgeben.
-     - Falls User nicht existiert: `0`.
-
-4. **Methode: `Task<(long globalXp, int guildCount)> GetAggregatedStatsAsync(ulong discordUserId, CancellationToken ct = default)`**
-   - Zweck:
-     - Summe über alle `UserStats.Xp` + Anzahl Guilds.
-   - Schritte:
-     - User anhand `DiscordUserId` ermitteln (Join über `Users` bzw. vorher per `UserService`).
-     - Alle `UserStats` mit `UserId` laden und aggregieren:
-       - `globalXp = SUM(Xp)`
-       - `guildCount = COUNT(distinct GuildId)` oder `COUNT(*)`.
-     - Falls keine Stats: `(0, 0)`.
-
-5. **Methode (optional für später): `Task<int> GetLevelFromXpAsync(long globalXp)`**
-   - Zweck:
-     - Levelberechnung zentralisieren: z.B. `return (int)(globalXp / 100);`
-   - So kann die Formel später leicht geändert werden.
+1. `appsettings.json`:
+   - Optional: Platzhalter für ConnectionStrings, aber ohne echte Passwörter.
+2. In `Program.cs`:
+   - `Host.CreateDefaultBuilder` nutzen (liest automatisch Env-Vars, JSON, etc.).
+   - `configuration.GetConnectionString("DefaultConnection")` verwenden.
+3. Bot-Token:
+   - Token aus `IConfiguration` lesen, z.B. `configuration["Discord:Token"]` oder einfach `Environment.GetEnvironmentVariable("DISCORD_TOKEN")`.
+   - Falls Token fehlt → klare Fehlermeldung ins Log, Bot startet nicht.
+4. Logging:
+   - Standard-Console-Logger nutzen.
+   - Optional Log-Level reduzieren (`Information` oder `Warning`) für weniger Spam im Container.
 
 ---
 
-### Ticket 4: `BadgeService` erstellen – Badges verwalten & vergeben
+## Ticket 4: Raspberry Pi 5 (PiOS Lite 64‑bit) für Docker vorbereiten
 
-**Titel:** `BadgeService` implementieren (Badges lesen, vergeben, prüfen)
+**Titel:** Raspberry Pi 5 für Docker-Betrieb vorbereiten (PiOS Lite 64-bit)
 
 **Beschreibung:**
 
-Erstelle einen `BadgeService`, der die Arbeit mit `Badges` und `UserBadges` kapselt, anstatt alles direkt aus Commands zu machen.
+Bereite den Raspberry Pi 5 mit PiOS Lite 64‑bit so vor, dass Docker und docker-compose ausgeführt werden können.
+
+**Akzeptanzkriterien:**
+
+- Docker Engine ist installiert und lauffähig (`docker run hello-world` funktioniert).
+- `docker compose` (Plugin oder `docker-compose`) ist verfügbar.
+- Der Standard-User (z.B. `pi`) kann Docker ohne `sudo` nutzen (Gruppe `docker`).
 
 **Aufgaben:**
 
-1. **Klasse anlegen**
-   - Namespace: `GlobalStatsBot.Services`.
-   - Konstruktor mit:
-     - `DiscordIdentityContext`
-     - `UserService`
-     - `ILogger<BadgeService>`.
-
-2. **Methode: `Task<Badges?> GetBadgeByKeyAsync(string badgeKey, CancellationToken ct = default)`**
-   - Zweck:
-     - Badge anhand ihres `Key` laden (case-insensitive Vergleich empfohlen).
-
-3. **Methode: `Task<IReadOnlyList<Badges>> GetAllBadgesAsync(CancellationToken ct = default)`**
-   - Zweck:
-     - Alle Badges aus DB lesen (z.B. für Admin-Übersichten).
-   - Sortierung:
-     - Standardmäßig nach `DisplayOrder` und dann nach `Name`.
-
-4. **Methode: `Task<bool> GiveBadgeToUserAsync(ulong targetDiscordUserId, string targetUsername, string badgeKey, ulong grantedByDiscordUserId, string? reason, CancellationToken ct = default)`**
-   - Zweck:
-     - Kernlogik für `/badge give`.
-   - Schritte:
-     1. Über `UserService.GetOrCreateUserAsync` Ziel-User holen/anlegen.
-     2. Badge über `GetBadgeByKeyAsync` holen.
-        - Wenn nicht gefunden → `false` zurückgeben.
-     3. Prüfen, ob in `UserBadges` bereits ein Eintrag `(UserId, BadgeId)` existiert.
-        - Wenn ja → nichts tun, `true` zurückgeben (idempotent).
-     4. Neuen `UserBadges`-Eintrag erstellen:
-        - `UserId`, `BadgeId`
-        - `GrantedByDiscordUserId`
-        - `GrantedAt = UtcNow`
-        - `Reason`.
-     5. `SaveChangesAsync`.
-   - Rückgabewert:
-     - `true` bei Erfolg, `false` wenn Badge nicht existierte.
-
-5. **Methode: `Task<IReadOnlyList<(Badges Badge, DateTime GrantedAt, string? Reason)>> GetBadgesForUserAsync(ulong discordUserId, CancellationToken ct = default)`**
-   - Zweck:
-     - Liste aller Badges eines Users für `/badge list` und `/me`.
-   - Schritte:
-     - User anhand `DiscordUserId` finden (oder `null` → leere Liste).
-     - `UserBadges` + `Badges` joinen.
-     - Sortierung:
-       - Erst nach `Badges.DisplayOrder` ASC,
-       - dann nach `UserBadges.GrantedAt` ASC.
-
-6. **Methode: `Task<IReadOnlyList<(Badges Badge, DateTime GrantedAt, string? Reason)>> GetTopBadgesForUserAsync(ulong discordUserId, int topN, CancellationToken ct = default)`**
-   - Zweck:
-     - Nur die wichtigsten Badges (z.B. Top 3) für `/me`.
-   - Implementierung:
-     - Auf Basis von `GetBadgesForUserAsync`, dann `.Take(topN)` oder direkt per LINQ/SQL mit `Take(topN)`.
+1. PiOS Lite 64‑bit installieren und einrichten (SSH, Updates).
+2. Docker installieren, z.B. via offizielles Script oder Paketmanager:
+   - `curl -sSL https://get.docker.com | sh` (oder Anleitung von [docs.docker.com](https://docs.docker.com)).
+3. User zur Gruppe `docker` hinzufügen:
+   - `sudo usermod -aG docker $USER`.
+   - Neu einloggen.
+4. `docker compose` installieren:
+   - Entweder Docker Compose Plugin (aktuelle Docker-Versionen) oder `docker-compose` Binary.
+   - Test: `docker compose version`.
+5. Test-Container laufen lassen:
+   - `docker run --rm arm64v8/alpine echo "Hello from Pi"`.
 
 ---
 
-### Ticket 5: `ProfileService` / Profil-Abfrage für `/me`
+## Ticket 5: Build & Deployment-Workflow für Raspberry Pi definieren
 
-**Titel:** Profil-Logik für `/me` kapseln (`ProfileService`)
+**Titel:** Build- & Deployment-Prozess für Raspberry Pi Container definieren
 
 **Beschreibung:**
 
-Erstelle einen dedizierten Service für die Profilabfrage, um die Business-Logik von den SlashCommands zu trennen.
+Lege fest, wie das Docker-Image für den Bot auf deinen Raspberry Pi kommt und dort gestartet wird (lokaler Build vs. Registry).
+
+**Akzeptanzkriterien:**
+
+- Dokumentierter Weg:
+  - Entweder direkt auf dem Pi bauen (`docker compose build`),
+  - oder auf Entwicklungsrechner bauen & in Registry (Docker Hub / GitHub Container Registry) pushen.
+- Klarer Befehl zum Starten/Updaten:
+  - `docker compose pull && docker compose up -d` o.ä.
 
 **Aufgaben:**
 
-1. **Klasse anlegen**
-   - Name: `ProfileService`.
-   - Konstruktor:
-     - `UserService`
-     - `StatsService`
-     - `BadgeService`
-     - `ILogger<ProfileService>`.
-
-2. **DTO anlegen: `UserProfileDto`**
-   - Properties:
-     - `ulong DiscordUserId`
-     - `string Username`
-     - `long GlobalXp`
-     - `int Level`
-     - `int GuildCount`
-     - `IReadOnlyList<UserBadgeDto> Badges` (Top N)
-   - `UserBadgeDto`:
-     - `string Key`
-     - `string Name`
-     - `string Description`
-     - `string? IconUrl`
-     - `DateTime GrantedAt`
-     - `string? Reason`
-
-3. **Methode: `Task<UserProfileDto?> GetUserProfileAsync(ulong discordUserId, int topBadges = 3, CancellationToken ct = default)`**
-   - Zweck:
-     - Daten für `/me` gebündelt liefern.
-   - Schritte:
-     1. User über `UserService.GetUserByDiscordIdAsync` laden.
-        - Wenn `null` → `null` zurückgeben (Profil existiert (noch) nicht).
-     2. Über `StatsService.GetAggregatedStatsAsync` globale XP + Guild-Count holen.
-     3. Level über `StatsService.GetLevelFromXpAsync(globalXp)` berechnen.
-     4. Top-Badges über `BadgeService.GetTopBadgesForUserAsync`.
-     5. `UserProfileDto` aus allen Infos zusammensetzen.
-
-4. **Verwendung:**
-   - SlashCommand `/me` ruft nur noch `ProfileService.GetUserProfileAsync` auf und baut daraus ein Embed.
-   - Falls `null` → freundliche Meldung: „Du hast noch keine XP gesammelt.“
+1. Variante definieren:
+   - A: Build direkt auf dem Pi (einfach, aber langsam).
+   - B: Build auf Dev-Maschine, Push zu Registry, Pull auf Pi (empfohlen).
+2. Für Variante B:
+   - Image-Tag festlegen, z.B. `zyberphil/globalstatsbot:latest`.
+   - Anleitung:
+     - `docker build -t zyberphil/globalstatsbot:latest .`
+     - `docker push zyberphil/globalstatsbot:latest`
+   - Auf dem Pi:
+     - `docker pull zyberphil/globalstatsbot:latest`
+     - `docker compose up -d`.
+3. `docker-compose.yml` ggf. so anpassen, dass `image:` verwendet wird statt `build:` (für den Pi).
 
 ---
 
-### Ticket 6: Message-Handler / XP-Cooldown-Layer
+## Ticket 6: Systemdienst / Autostart für Bot-Stack auf dem Pi
 
-**Titel:** Message-Handler für XP mit Cooldown (Nutzung von `StatsService`)
+**Titel:** Autostart für Docker-Stack auf Raspberry Pi konfigurieren
 
 **Beschreibung:**
 
-Implementiere den eigentlichen Event-Handler, der DSharpPlus-Events mit den Services verbindet.
+Sorge dafür, dass der Docker-Stack (Bot + MariaDB) nach einem Reboot des Raspberry Pi automatisch wieder gestartet wird.
+
+**Akzeptanzkriterien:**
+
+- Nach einem Neustart des Pis läuft `docker ps` und zeigt `bot` + `db`-Container.
+- Kein manueller Eingriff nötig.
 
 **Aufgaben:**
 
-1. **Klasse anlegen**
-   - Name: `XpMessageHandler` o.ä.
-   - Felder:
-     - `DiscordClient`
-     - `StatsService`
-     - `GuildService`
-     - `ILogger<XpMessageHandler>`
-     - `ConcurrentDictionary<ulong, DateTime>` o.ä. für Cooldown (Key = `DiscordUserId`).
-
-2. **Registrierung im Bot-Startup**
-   - In `BotService` oder vergleichbarer Klasse:
-     - `client.MessageCreated += xpHandler.OnMessageCreatedAsync;`
-
-3. **Methode: `Task OnMessageCreatedAsync(DiscordClient client, MessageCreateEventArgs e)`**
-   - Schritte:
-     1. Bot-Messages und Webhooks ignorieren.
-     2. Nur Guild-Nachrichten berücksichtigen, keine DMs.
-     3. Über `GuildService.GetGuildByDiscordIdAsync` prüfen, ob Guild existiert und `IsXpEnabled == true`.
-        - Falls nicht → abbrechen.
-     4. Cooldown prüfen:
-        - Wenn `now - lastXp < 30s` → abbrechen.
-        - Sonst `lastXp = now`.
-     5. `StatsService.AddXpForMessageAsync(e.Author, e.Guild)` aufrufen (ggf. `xpDelta` aus Config).
+1. In `docker-compose.yml` für beide Services `restart: unless-stopped` setzen (falls noch nicht geschehen).
+2. Prüfen, dass Docker beim Systemstart automatisch startet (Systemd-Service `docker` aktiv).
+3. Optional: Systemd-Unit erstellen, die bei Boot `docker compose up -d` im Projektverzeichnis ausführt (falls du nicht auf `restart` allein vertrauen möchtest).
+4. Reboot-Test:
+   - `sudo reboot`.
+   - Nach Neustart: `docker ps` prüfen.
+   - Logs ansehen: `docker logs <bot-container>`.
 
 ---
 
-Wenn du möchtest, kann ich dir als Nächstes die Tickets noch in konkrete GitHub-Issue-Markdown-Vorlagen umwandeln (mit Labels/Acceptance Criteria) oder wir starten mit der tatsächlichen Implementierung der ersten Service-Klasse (`UserService` + DI-Registrierung).
+## Ticket 7: Health-Check & Logging-Überwachung
+
+**Titel:** Health-Check & Logging für Docker-Bot auf dem Pi einrichten
+
+**Beschreibung:**
+
+Richte einfache Überwachung ein, um zu erkennen, ob der Bot noch korrekt läuft, und Logs leicht auswerten zu können.
+
+**Akzeptanzkriterien:**
+
+- Einfacher Health-Check: z.B. Bot-Prozess im Container läuft, Container nicht ständig neu startet.
+- Zugriff auf Logs über `docker logs`.
+- Optional: Healthcheck im Dockerfile / Compose.
+
+**Aufgaben:**
+
+1. Logging:
+   - Sicherstellen, dass der Bot alle Logs auf stdout/stderr schreibt (kein File-Logging).
+   - Anleitung: `docker logs -f <bot-container-name>`.
+2. Optional Healthcheck im Dockerfile oder Compose:
+   - Z.B. ein einfacher `CMD`-Check, ob der Prozess noch lebt (schwierig ohne HTTP, optional).
+3. In DSharpPlus:
+   - LogLevel sinnvoll konfigurieren (z.B. `Information`), um CPU/IO zu sparen.
+4. Dokumentation:
+   - Kurze README-Sektion: „Wie prüfe ich auf dem Pi, ob der Bot läuft / wie sehe ich Logs?“.
+
+---
+
+Wenn du möchtest, kann ich dir im nächsten Schritt direkt ein Beispiel für:
+
+- `Dockerfile`
+- `docker-compose.yml`
+- und die Codeanpassung in `Program.cs` (Env-Variablen lesen)
+
+als vollständige Dateien im passenden Format schreiben.

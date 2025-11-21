@@ -25,6 +25,8 @@ public partial class guild
 
     public DateTime UpdatedAt { get; set; }
 
+    public virtual ICollection<channelstat> channelstats { get; set; } = new List<channelstat>();
+
     public virtual ICollection<guildsubscription> guildsubscriptions { get; set; } = new List<guildsubscription>();
 
     public virtual ICollection<userstat> userstats { get; set; } = new List<userstat>();

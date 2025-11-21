@@ -13,7 +13,7 @@ public class XpMessageHandler
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<XpMessageHandler> _logger;
     private readonly ConcurrentDictionary<ulong, DateTime> _cooldowns = new();
-    private readonly TimeSpan _cooldownWindow = TimeSpan.FromSeconds(30);
+    private readonly TimeSpan _cooldownWindow = TimeSpan.FromSeconds(3);
 
     public XpMessageHandler(IServiceScopeFactory scopeFactory, ILogger<XpMessageHandler> logger)
     {
@@ -54,7 +54,7 @@ public class XpMessageHandler
             if (guildEntity.IsXpEnabled.HasValue && !guildEntity.IsXpEnabled.Value)
                 return;
 
-            await statsService.AddXpForMessageAsync(e.Author, e.Guild);
+            await statsService.AddXpForMessageAsync(e.Author, e.Guild, e.Channel);
         }
         catch (Exception ex)
         {

@@ -45,6 +45,7 @@ builder.Services.AddScoped<BadgeService>();
 builder.Services.AddScoped<ProfileService>();
 builder.Services.AddSingleton<XpMessageHandler>();
 builder.Services.AddHostedService<BotService>();
+builder.Services.AddHostedService<GlobalXpSyncService>();
 
 var host = builder.Build();
 await host.RunAsync();

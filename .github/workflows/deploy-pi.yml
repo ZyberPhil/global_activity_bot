@@ -14,23 +14,25 @@ jobs:
     - name: 1. Code auschecken
       uses: actions/checkout@v4
 
-    - name: 3. Abhängigkeiten wiederherstellen (Restore)
+    - name: 2. Abhängigkeiten wiederherstellen (Restore)
+      working-directory: ./bot/GlobalStatsBot/GlobalStatsBot
       run: dotnet restore
 
-    - name: 4. Bot Bauen und Publizieren
+    - name: 3. Bot Bauen und Publizieren
+      working-directory: ./bot/GlobalStatsBot/GlobalStatsBot
       # Erstellt die optimierten Binaries und legt sie im Ordner 'publish_output' ab
       run: dotnet publish -c Release -o ./publish_output
 
-    - name: 5. Bot Service stoppen
+    - name: 4. Bot Service stoppen
       # Stoppt den 24/7-Service auf dem Pi, damit die DLLs ersetzt werden können
       # '|| true' verhindert, dass der Workflow fehlschlägt, falls der Service gerade nicht läuft
       run: sudo systemctl stop global_stats_bot.service || true
 
-    - name: 6. Dateien kopieren (Deployment)
+    - name: 5. Dateien kopieren (Deployment)
       # Kopiere die kompilierten Dateien in den Laufzeit-Ordner
       # **WICHTIG:** '--exclude appsettings.json' verhindert das Überschreiben deiner Bot-Token/DB-Passwörter!
       run: rsync -av --delete --exclude 'appsettings.json' ./publish_output/ /home/global_stats_bot/
 
-    - name: 7. Bot Service neu starten
+    - name: 6. Bot Service neu starten
       # Startet den Bot mit den neuen Dateien
       run: sudo systemctl start global_stats_bot.service

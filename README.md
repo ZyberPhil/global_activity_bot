@@ -718,10 +718,3 @@ VALUES
 3. **API & Views**
    - `GET /u/{discordId}` → Profilseite mit XP, Level, Badges.
    - Evtl. OAuth2-Login via Discord für User-spezifische Einstellungen.
-
----
-
-Wenn du möchtest, kann ich dir jetzt als nächsten Schritt ein **konkretes Minimalgerüst** schreiben (mit Datei-Struktur und Beispiel-Code für `Program.cs`, `BotService`, `ProfileCommands`), alles schon passend für:
-
-- DSharpPlus + SlashCommands
-- EF Core Database-First mit MariaDB.

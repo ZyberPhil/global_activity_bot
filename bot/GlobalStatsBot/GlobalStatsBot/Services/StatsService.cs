@@ -155,11 +155,14 @@ public class StatsService
 
     public Task<int> GetLevelFromXpAsync(long globalXp)
     {
-        if (globalXp < 0)
-            globalXp = 0;
+        if (globalXp <= 0)
+        {
+            return Task.FromResult(0);
+        }
 
-        var level = (int)(globalXp / 100);
-        return Task.FromResult(level);
+        // Level requirement: XP_needed = 10 * level^2
+        var level = (int)Math.Floor(Math.Sqrt(globalXp / 10d));
+        return Task.FromResult(Math.Max(level, 0));
     }
 
     private static long ClampToLong(ulong value)

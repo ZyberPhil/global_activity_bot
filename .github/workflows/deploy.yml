@@ -2,7 +2,7 @@ name: Deploy GlobalStatsBot
 
 on:
   push:
-    branches: [ "main" ] # oder "master" 
+    branches: [ "main" ] # oder "master"
 
 jobs:
   build-and-deploy:
@@ -17,12 +17,13 @@ jobs:
       with:
         dotnet-version: 8.0.x
 
-    - name: Restore
-      run: dotnet restore
+    - name: Abhängigkeiten wiederherstellen
+      # HIER IST DIE KORREKTUR: Pfad zur Projektdatei angeben
+      run: dotnet restore ./GlobalStatsBot/GlobalStatsBot.csproj 
 
     - name: Build & Publish
-      # Baut den Bot und legt die Dateien in den Ordner ./publish
-      run: dotnet publish -c Release -o ./publish
+      # HIER IST DIE KORREKTUR: Pfad zur Projektdatei angeben
+      run: dotnet publish ./GlobalStatsBot/GlobalStatsBot.csproj -c Release -o ./publish
 
     - name: Deploy
       run: |

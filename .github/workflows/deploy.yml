@@ -2,7 +2,7 @@ name: Deploy GlobalStatsBot
 
 on:
   push:
-    branches: [ "main" ] # oder "master"
+    branches: [ "main" ] # oder "master" 
 
 jobs:
   build-and-deploy:

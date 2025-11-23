@@ -18,12 +18,10 @@ jobs:
         dotnet-version: 8.0.x
 
     - name: Abhängigkeiten wiederherstellen
-      # HIER IST DIE KORREKTUR: Pfad zur Projektdatei angeben
-      run: dotnet restore ./GlobalStatsBot/GlobalStatsBot.csproj 
+      run: dotnet restore ./GlobalStatsBot.csproj 
 
     - name: Build & Publish
-      # HIER IST DIE KORREKTUR: Pfad zur Projektdatei angeben
-      run: dotnet publish ./GlobalStatsBot/GlobalStatsBot.csproj -c Release -o ./publish
+      run: dotnet publish ./GlobalStatsBot.csproj -c Release -o ./publish
 
     - name: Deploy
       run: |

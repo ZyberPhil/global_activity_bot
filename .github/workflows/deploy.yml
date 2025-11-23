@@ -1,0 +1,37 @@
+name: Deploy GlobalStatsBot
+
+on:
+  push:
+    branches: [ "main" ] # oder "master"
+
+jobs:
+  build-and-deploy:
+    runs-on: self-hosted
+
+    steps:
+    - name: Code holen
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 8.0.x
+
+    - name: Restore
+      run: dotnet restore
+
+    - name: Build & Publish
+      # Baut den Bot und legt die Dateien in den Ordner ./publish
+      run: dotnet publish -c Release -o ./publish
+
+    - name: Deploy
+      run: |
+        echo "Stoppe Bot (falls er läuft)..."
+        sudo systemctl stop discordbot || true
+        
+        echo "Kopiere Dateien..."
+        # Kopiert alles von ./publish nach /opt/GlobalStatsBot/
+        cp -r ./publish/* /opt/GlobalStatsBot/
+        
+        echo "Starte Bot neu..."
+        sudo systemctl restart discordbot
